@@ -9,9 +9,23 @@
 
 ## Installation
 
+Install from a local source checkout:
+
 ```r
-# From local source directory:
 install.packages(".", repos = NULL, type = "source")
+```
+
+Or from within R:
+
+```r
+install.packages(".", repos = NULL, type = "source")
+```
+
+Alternatively using pak:
+
+```r
+install.packages("pak") # skip if already installed
+pak::pak("tenomoto/ncr")
 ```
 
 ## Quickstart
