@@ -1,0 +1,24 @@
+Package: ncr
+Type: Package
+Title: Exploratory Visualization and Slicing of NetCDF Files in Base R
+Version: 0.1.0
+Authors@R: person("ncr", "authors", email = "ncr@example.com", role = c("aut", "cre"))
+Description: Provides a thin, interactive GrADS- and NCL-inspired S3 wrapper
+    around 'RNetCDF' and base R graphics ('fields' and 'maps') for rapid
+    exploratory analysis and visualization of NetCDF files. Supports stateful
+    and ad-hoc slicing across longitude, latitude, vertical level, and time,
+    filled and line contours, self-scaling vector arrows, map projections,
+    Hovmoeller diagrams with formatted time axes, and vertical cross-sections
+    with dual pressure and height axes.
+License: BSD_2_clause + file LICENSE
+Encoding: UTF-8
+Imports:
+    RNetCDF,
+    fields,
+    maps,
+    grDevices,
+    graphics,
+    stats,
+    utils
+NeedsCompilation: no
+Config/roxygen2/version: 8.1.1

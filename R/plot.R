@@ -1,0 +1,1031 @@
+#' Draw Self-Scaling Vector Arrows
+#'
+#' Plots a 2D vector field `(u, v)` on an existing base R graphics device,
+#' scaling arrow lengths automatically to the grid spacing and plot window
+#' (`par("usr")`).
+#'
+#' @param x,y Numeric vectors of grid coordinates along the X and Y axes.
+#' @param u,v Numeric matrices (or vectors) of horizontal and vertical vector
+#'   components matching `length(x)` by `length(y)`.
+#' @param length Arrowhead length in inches passed to [graphics::arrows()]
+#'   (default `0.05`).
+#' @param uvref Reference vector magnitude used for scaling. If `NA` (default),
+#'   computed automatically as `max(abs(c(u, v)), na.rm = TRUE)`.
+#' @param skip Integer subsampling stride (`1L` plots every grid point, `2L`
+#'   plots every second point along `x` and `y`).
+#' @param col Arrow color (default `"black"`).
+#' @param ... Additional graphical parameters passed to [graphics::arrows()].
+#' @return Invisibly returns the reference magnitude `uvref`.
+#' @examples
+#' x <- seq(100, 160, by = 10)
+#' y <- seq(10, 50, by = 10)
+#' u <- outer(x, y, function(lon, lat) 10 * cos(lat * pi / 180))
+#' v <- outer(x, y, function(lon, lat) 5 * sin(lon * pi / 180))
+#' plot(NA, xlim = range(x), ylim = range(y), xlab = "lon", ylab = "lat")
+#' drawvec(x, y, u, v)
+#' @export
+drawvec <- function(x, y, u, v, length = 0.05, uvref = NA, skip = 1L, col = "black", ...) {
+  skip <- max(1L, as.integer(skip)[1L])
+  if (skip > 1L && is.matrix(u) && is.matrix(v)) {
+    ix <- seq.int(1L, length(x), by = skip)
+    iy <- seq.int(1L, length(y), by = skip)
+    x <- x[ix]
+    y <- y[iy]
+    u <- u[ix, iy, drop = FALSE]
+    v <- v[ix, iy, drop = FALSE]
+  }
+  nx <- length(x)
+  ny <- length(y)
+  usr <- graphics::par("usr")
+  d <- min((usr[2L] - usr[1L]) / nx, (usr[4L] - usr[3L]) / ny)
+  if (is.na(uvref)) uvref <- max(abs(c(u, v)), na.rm = TRUE)
+  if (!is.finite(uvref) || uvref <= 0) return(invisible(uvref))
+  d <- d / uvref
+  u <- 0.5 * as.vector(u) * d
+  v <- 0.5 * as.vector(v) * d
+  X <- rep(x, times = length(y))
+  Y <- rep(y, each  = length(x))
+  keep <- !is.na(u) & !is.na(v) & !is.na(X) & !is.na(Y) & ((abs(u) + abs(v)) > 1e-12)
+  if (any(keep)) {
+    graphics::arrows(X[keep] - u[keep], Y[keep] - v[keep],
+                     X[keep] + u[keep], Y[keep] + v[keep],
+                     length = length, col = col, ...)
+  }
+  invisible(uvref)
+}
+
+#' Convert Between Pressure and Standard-Atmosphere Height
+#'
+#' Converts pressure (`hPa`) to approximate log-pressure scale height (`km`)
+#' and vice-versa for dual-axis vertical cross-sections.
+#'
+#' @param p Numeric vector of pressure in `hPa`.
+#' @param z Numeric vector of altitude/height in `km`.
+#' @param p0 Reference surface pressure in `hPa` (default `1013.25`).
+#' @param H Scale height in `km` (default `7.2`).
+#' @return Numeric vector of height in `km` (`pres2alt`) or pressure in `hPa`
+#'   (`alt2pres`).
+#' @examples
+#' pres2alt(c(1000, 850, 500, 200, 100))
+#' alt2pres(c(0, 5, 10, 16))
+#' @export
+pres2alt <- function(p, p0 = 1013.25, H = 7.2) {
+  -H * log(p / p0)
+}
+
+#' @rdname pres2alt
+#' @export
+alt2pres <- function(z, p0 = 1013.25, H = 7.2) {
+  p0 * exp(-z / H)
+}
+
+#' Plot or Contour a NetCDF Dataset or Slice
+#'
+#' High-level S3 plotting methods for `"ncr"` and `"ncr_slice"` objects.
+#' Automatically detects the slice geometry and produces:
+#' * **2D Horizontal Maps (`lon`-`lat`)**: Filled or line contours, overlaid
+#'   world coastlines (`maps::map()`), optional map projections (`proj`), and
+#'   self-scaling wind/current vectors (`drawvec()`).
+#' * **Hovmoeller Diagrams (`lon`-`time` or `lat`-`time`)**: Filled/line
+#'   contours with formatted `POSIXct` time axes and degree labels.
+#' * **Vertical Cross-Sections (`lon`-`lev` or `lat`-`lev`)**: Inverted
+#'   log-pressure or linear-pressure axis on the left and standard-atmosphere
+#'   height (`km`) on the right (or height on the left and pressure on the
+#'   right).
+#' * **1D Profiles / Time Series**: Line plots with formatted time or
+#'   pressure-height axes.
+#'
+#' @param x An `"ncr"` or `"ncr_slice"` object.
+#' @param var Optional variable name(s) when `x` is an `"ncr"` object:
+#'   length 1 for scalar, length 2 for vector `c("u", "v")`, or length 3 for
+#'   scalar + vector `c("temp", "u", "v")`.
+#' @param filled Logical; if `TRUE` (default for scalar `plot()`), draws filled
+#'   contours with a colorbar via [fields::image.plot()].
+#' @param contour Logical; if `TRUE`, draws contour lines over filled contours.
+#' @param map Logical; if `TRUE` (default for `lon`-`lat` slices), overlays
+#'   world coastlines from `maps::map()`.
+#' @param proj Character string specifying map projection (e.g., `"lonlat"`,
+#'   `"orthographic"`, `"stereographic"`, `"npstere"`, `"spstere"`,
+#'   `"robinson"`, `"mollweide"`, `"mercator"`, `"lambert"`). Defaults to the
+#'   global state `nc_get()$proj`.
+#' @param lon0,lat0 Optional center longitude and latitude for map projections.
+#' @param nlevels Approximate number of contour levels (default `12`).
+#' @param levels Optional explicit numeric vector of contour break levels.
+#' @param col Color vector or palette function. Defaults to a diverging/spectral
+#'   HCL palette (`hcl.colors(..., "RdYlBu", rev = TRUE)`).
+#' @param zlog Logical; for pressure cross-sections, whether to space the
+#'   vertical axis logarithmically in pressure (default `TRUE`).
+#' @param time_axis For Hovmoeller diagrams, which axis carries time: `"y"`
+#'   (default) or `"x"`.
+#' @param uv Optional character vector `c("u", "v")` (when `x` is `"ncr"`) or
+#'   `"ncr_slice"` vector object to overlay arrows on a scalar plot.
+#' @param skip Integer subsampling factor for vector arrows (default `1L`).
+#' @param uvref Reference vector length passed to [drawvec()].
+#' @param length Arrowhead length in inches passed to [drawvec()] (default
+#'   `0.05`).
+#' @param add Logical; if `TRUE`, adds contours or vectors to the current plot.
+#' @param main,xlab,ylab Optional plot title and axis labels.
+#' @param ... Additional slicing arguments (`lon`, `lat`, `lev`, `time`) when
+#'   `x` is an `"ncr"` object, or graphical parameters passed to underlying plot
+#'   functions.
+#' @return Invisibly returns the plotted `"ncr_slice"` object.
+#' @examples
+#' f <- nc_example()
+#' nc <- nc_open(f)
+#'
+#' # 1. Quick filled contour map with coastlines
+#' plot(nc, "temp")
+#'
+#' # 2. Scalar + wind vector overlay at 850 hPa
+#' plot(nc, "temp", uv = c("u", "v"), lev = 850)
+#'
+#' # 3. Orthographic projection
+#' plot(nc, "temp", proj = "orthographic", lon0 = 140, lat0 = 30)
+#'
+#' # 4. Hovmoeller diagram along the equator
+#' nc_hovmoeller(nc, "temp", lat = 0)
+#'
+#' # 5. Vertical pressure-height cross-section along 140E
+#' nc_xsection(nc, "temp", lon = 140)
+#'
+#' nc_close(nc)
+#' @export
+plot.ncr <- function(x,
+                     var = NULL,
+                     ...,
+                     uv = NULL,
+                     filled = NULL,
+                     contour = TRUE,
+                     map = TRUE,
+                     proj = NULL,
+                     lon0 = NULL,
+                     lat0 = NULL,
+                     nlevels = 12,
+                     levels = NULL,
+                     col = NULL,
+                     zlog = TRUE,
+                     time_axis = "y",
+                     skip = 1L,
+                     uvref = NA,
+                     length = 0.05,
+                     main = NULL,
+                     xlab = NULL,
+                     ylab = NULL) {
+  uv_slice <- if (inherits(uv, "ncr_slice")) uv else NULL
+  uv_names <- if (is.character(uv)) uv else NULL
+  s <- nc_slice(x, var = var, uv = uv_names, ...)
+  if (!is.null(uv_slice)) {
+    s$u <- if (!is.null(uv_slice$u)) uv_slice$u else uv_slice$z
+    s$v <- uv_slice$v
+    s$has_uv <- TRUE
+  }
+  plot.ncr_slice(
+    s,
+    filled    = filled,
+    contour   = contour,
+    map       = map,
+    proj      = proj,
+    lon0      = lon0,
+    lat0      = lat0,
+    nlevels   = nlevels,
+    levels    = levels,
+    col       = col,
+    zlog      = zlog,
+    time_axis = time_axis,
+    skip      = skip,
+    uvref     = uvref,
+    length    = length,
+    main      = main,
+    xlab      = xlab,
+    ylab      = ylab
+  )
+}
+
+#' @rdname plot.ncr
+#' @export
+plot.ncr_slice <- function(x,
+                           ...,
+                           uv = NULL,
+                           filled = NULL,
+                           contour = TRUE,
+                           map = TRUE,
+                           proj = NULL,
+                           lon0 = NULL,
+                           lat0 = NULL,
+                           nlevels = 12,
+                           levels = NULL,
+                           col = NULL,
+                           zlog = TRUE,
+                           time_axis = "y",
+                           skip = 1L,
+                           uvref = NA,
+                           length = 0.05,
+                           add = FALSE,
+                           main = NULL,
+                           xlab = NULL,
+                           ylab = NULL) {
+  if (inherits(uv, "ncr_slice")) {
+    x$u <- if (!is.null(uv$u)) uv$u else uv$z
+    x$v <- uv$v
+    x$has_uv <- TRUE
+  }
+  if (is.null(filled)) {
+    filled <- !isTRUE(x$is_vector)
+  }
+  if (is.null(proj)) {
+    proj <- nc_get()$proj
+  }
+  if (is.null(lon0)) lon0 <- nc_get()$lon0
+  if (is.null(lat0)) lat0 <- nc_get()$lat0
+
+  if (x$plot_type == "1d" || length(x$active_dims) == 1L) {
+    .plot_1d_slice(x, main = main, xlab = xlab, ylab = ylab, zlog = zlog,
+                   add = add, ...)
+    return(invisible(x))
+  }
+
+  if (x$plot_type == "hovmoeller") {
+    .plot_hovmoeller_slice(
+      x, filled = filled, contour = contour, nlevels = nlevels,
+      levels = levels, col = col, time_axis = time_axis,
+      skip = skip, uvref = uvref, length = length,
+      main = main, xlab = xlab, ylab = ylab, ...
+    )
+    return(invisible(x))
+  }
+
+  if (x$plot_type == "xsection") {
+    .plot_xsection_slice(
+      x, filled = filled, contour = contour, nlevels = nlevels,
+      levels = levels, col = col, zlog = zlog,
+      skip = skip, uvref = uvref, length = length,
+      main = main, xlab = xlab, ylab = ylab, ...
+    )
+    return(invisible(x))
+  }
+
+  # 2D horizontal map ("lonlat") or generic 2D slice
+  .plot_2d_slice(
+    x, filled = filled, contour = contour, map = map,
+    proj = proj, lon0 = lon0, lat0 = lat0,
+    nlevels = nlevels, levels = levels, col = col,
+    skip = skip, uvref = uvref, length = length,
+    add = add, main = main, xlab = xlab, ylab = ylab, ...
+  )
+  invisible(x)
+}
+
+#' @rdname plot.ncr
+#' @export
+contour.ncr <- function(x, var = NULL, filled = FALSE, ...) {
+  s <- nc_slice(x, var = var, ...)
+  contour.ncr_slice(s, filled = filled, ...)
+}
+
+#' @rdname plot.ncr
+#' @export
+contour.ncr_slice <- function(x,
+                              filled = FALSE,
+                              contour = !filled,
+                              map = TRUE,
+                              proj = NULL,
+                              lon0 = NULL,
+                              lat0 = NULL,
+                              nlevels = 12,
+                              levels = NULL,
+                              col = NULL,
+                              add = FALSE,
+                              main = NULL,
+                              xlab = NULL,
+                              ylab = NULL,
+                              ...) {
+  plot.ncr_slice(
+    x,
+    filled  = filled,
+    contour = if (filled) contour else TRUE,
+    map     = map && !add,
+    proj    = proj,
+    lon0    = lon0,
+    lat0    = lat0,
+    nlevels = nlevels,
+    levels  = levels,
+    col     = col,
+    add     = add,
+    main    = main,
+    xlab    = xlab,
+    ylab    = ylab,
+    ...
+  )
+}
+
+#' @rdname plot.ncr
+#' @export
+points.ncr_slice <- function(x, skip = 1L, uvref = NA, length = 0.05, col = "black", ...) {
+  if (!isTRUE(x$has_uv) || is.null(x$u) || is.null(x$v)) {
+    stop("'points.ncr_slice' requires a vector slice (created with c('u', 'v') or uv = c('u', 'v')).",
+         call. = FALSE)
+  }
+  drawvec(x$x, x$y, x$u, x$v, length = length, uvref = uvref, skip = skip, col = col, ...)
+}
+
+#' Hovmoeller Diagram and Vertical Cross-Section Helpers
+#'
+#' Convenience wrappers that automatically slice along time (`nc_hovmoeller()`)
+#' or vertical levels (`nc_xsection()`) and render formatted Hovmoeller or
+#' dual-axis pressure/height cross-section plots.
+#'
+#' @inheritParams plot.ncr
+#' @param lon,lat,lev,time Dimension selectors passed to [nc_slice()].
+#' @return Invisibly returns the plotted `"ncr_slice"` object.
+#' @examples
+#' f <- nc_example()
+#' nc <- nc_open(f)
+#' nc_hovmoeller(nc, "temp", lat = 0)
+#' nc_xsection(nc, "temp", lon = 140)
+#' nc_close(nc)
+#' @export
+nc_hovmoeller <- function(x,
+                          var = NULL,
+                          lon = missing_arg(),
+                          lat = missing_arg(),
+                          lev = missing_arg(),
+                          time = NULL,
+                          time_axis = "y",
+                          filled = TRUE,
+                          contour = TRUE,
+                          ...) {
+  if (inherits(x, "ncr")) {
+    # If neither lon nor lat was fixed by caller or global state, default to lat = 0 (equator)
+    st <- nc_get()
+    lon_eff <- if (is_missing_arg(lon)) st$lon else lon
+    lat_eff <- if (is_missing_arg(lat)) st$lat else lat
+    if (is.null(lon_eff) && is.null(lat_eff)) {
+      lat <- 0
+    }
+    s <- nc_slice(x, var = var, lon = lon, lat = lat, lev = lev, time = time)
+  } else if (inherits(x, "ncr_slice")) {
+    s <- x
+  } else {
+    stop("'x' must be an 'ncr' or 'ncr_slice' object.", call. = FALSE)
+  }
+  plot.ncr_slice(s, filled = filled, contour = contour, time_axis = time_axis, ...)
+}
+
+#' @rdname nc_hovmoeller
+#' @export
+nc_xsection <- function(x,
+                        var = NULL,
+                        lon = missing_arg(),
+                        lat = missing_arg(),
+                        lev = NULL,
+                        time = missing_arg(),
+                        zlog = TRUE,
+                        filled = TRUE,
+                        contour = TRUE,
+                        ...) {
+  if (inherits(x, "ncr")) {
+    st <- nc_get()
+    lon_eff <- if (is_missing_arg(lon)) st$lon else lon
+    lat_eff <- if (is_missing_arg(lat)) st$lat else lat
+    if (is.null(lon_eff) && is.null(lat_eff)) {
+      lon <- stats::median(x$meta$dims[[x$meta$axis_map$lon]]$vals, na.rm = TRUE)
+    }
+    s <- nc_slice(x, var = var, lon = lon, lat = lat, lev = lev, time = time)
+  } else if (inherits(x, "ncr_slice")) {
+    s <- x
+  } else {
+    stop("'x' must be an 'ncr' or 'ncr_slice' object.", call. = FALSE)
+  }
+  plot.ncr_slice(s, filled = filled, contour = contour, zlog = zlog, ...)
+}
+
+# ---- Internal Plotting Helpers ----
+
+.default_title <- function(x) {
+  u <- if (nzchar(x$units)) sprintf(" [%s]", x$units) else ""
+  base_title <- paste0(x$long_name, u)
+  if (length(x$fixed_dims) > 0L) {
+    fx <- vapply(x$fixed_dims, function(d) {
+      if (d$axis == "time" && !is.null(d$time_posix)) {
+        format(d$time_posix[1L], "%Y-%m-%d %H:%M")
+      } else {
+        paste0(d$name, "=", signif(d$vals[1L], 4),
+               if (nzchar(d$units)) paste0(" ", d$units) else "")
+      }
+    }, character(1))
+    paste0(base_title, "\n(", paste(fx, collapse = ", "), ")")
+  } else {
+    base_title
+  }
+}
+
+.compute_levels_cols <- function(z, nlevels = 12, levels = NULL, col = NULL) {
+  zrng <- range(z, finite = TRUE)
+  if (!all(is.finite(zrng))) zrng <- c(0, 1)
+  if (zrng[1L] == zrng[2L]) zrng <- zrng + c(-0.5, 0.5)
+  if (is.null(levels)) {
+    levels <- pretty(zrng, n = nlevels)
+  }
+  nbins <- max(1L, length(levels) - 1L)
+  if (is.null(col)) {
+    cols <- grDevices::hcl.colors(nbins, "RdYlBu", rev = TRUE)
+  } else if (is.function(col)) {
+    cols <- col(nbins)
+  } else if (length(col) == 1L && !startsWith(col, "#") &&
+             col %in% grDevices::hcl.pals()) {
+    cols <- grDevices::hcl.colors(nbins, col, rev = TRUE)
+  } else {
+    cols <- col
+  }
+  list(levels = levels, cols = cols)
+}
+
+.format_deg_axis <- function(side, at, axis_type = c("lon", "lat")) {
+  axis_type <- match.arg(axis_type)
+  labs <- vapply(at, function(v) {
+    if (is.na(v)) return("")
+    if (axis_type == "lon") {
+      v_norm <- ((v + 180) %% 360) - 180
+      if (abs(v_norm) < 1e-6 || abs( abs(v_norm) - 180 ) < 1e-6) {
+        paste0(round(abs(v_norm), 1), "\u00b0")
+      } else if (v_norm > 0) {
+        paste0(round(v_norm, 1), "\u00b0E")
+      } else {
+        paste0(round(abs(v_norm), 1), "\u00b0W")
+      }
+    } else {
+      if (abs(v) < 1e-6) {
+        "0\u00b0"
+      } else if (v > 0) {
+        paste0(round(v, 1), "\u00b0N")
+      } else {
+        paste0(round(abs(v), 1), "\u00b0S")
+      }
+    }
+  }, character(1))
+  graphics::axis(side, at = at, labels = labs)
+}
+
+.overlay_world_map <- function(xlim, ylim, proj = "lonlat", lon0 = NULL, lat0 = NULL,
+                               col = "gray25", lwd = 0.8) {
+  wrap <- if (max(xlim, na.rm = TRUE) > 180.5) c(0, 360) else c(-180, 180)
+  if (proj == "lonlat") {
+    tryCatch(
+      maps::map("world", wrap = wrap, add = TRUE, col = col, lwd = lwd,
+                 interior = FALSE),
+      error = function(e) NULL
+    )
+  } else {
+    m <- tryCatch(
+      maps::map("world", plot = FALSE, fill = FALSE),
+      error = function(e) NULL
+    )
+    if (!is.null(m)) {
+      pm <- .project_map_lines(m, proj = proj, lon0 = lon0, lat0 = lat0)
+      graphics::lines(pm$x, pm$y, col = col, lwd = lwd)
+    }
+  }
+}
+
+.plot_2d_slice <- function(x, filled, contour, map, proj, lon0, lat0,
+                           nlevels, levels, col, skip, uvref, length,
+                           add, main, xlab, ylab, ...) {
+  proj_norm <- tolower(trimws(as.character(proj)[1L]))
+  is_proj <- (x$plot_type == "lonlat") &&
+    !(proj_norm %in% c("lonlat", "cylindrical", "equirectangular", "eqc", "none", ""))
+
+  if (is_proj) {
+    .plot_projected_2d(
+      x, filled = filled, contour = contour, map = map,
+      proj = proj_norm, lon0 = lon0, lat0 = lat0,
+      nlevels = nlevels, levels = levels, col = col,
+      skip = skip, uvref = uvref, length = length,
+      main = main, ...
+    )
+    return(invisible(x))
+  }
+
+  xv <- x$x
+  yv <- x$y
+  z  <- x$z
+  lc <- .compute_levels_cols(z, nlevels = nlevels, levels = levels, col = col)
+  if (is.null(main)) main <- .default_title(x)
+  if (is.null(xlab)) xlab <- if (x$x_dim$axis == "lon") "Longitude" else x$x_dim$name
+  if (is.null(ylab)) ylab <- if (x$y_dim$axis == "lat") "Latitude"  else x$y_dim$name
+
+  if (isTRUE(add)) {
+    if (isTRUE(filled)) {
+      graphics::.filled.contour(xv, yv, z, levels = lc$levels, col = lc$cols)
+    }
+    if (isTRUE(contour) && !isTRUE(x$is_vector)) {
+      graphics::contour(xv, yv, z, levels = lc$levels, add = TRUE,
+                        col = if (filled) "gray20" else if (!is.null(col) && length(col) == 1L) col else "black",
+                        ...)
+    }
+    if (isTRUE(x$has_uv) && !is.null(x$u) && !is.null(x$v)) {
+      drawvec(xv, yv, x$u, x$v, length = length, uvref = uvref, skip = skip)
+    }
+    return(invisible(x))
+  }
+
+  old_mar <- graphics::par("mar")
+  if (isTRUE(filled)) {
+    on.exit(graphics::par(mar = old_mar), add = TRUE)
+    mar_new <- old_mar
+    mar_new[4L] <- max(mar_new[4L], 5.5)
+    graphics::par(mar = mar_new)
+  }
+
+  xlim <- range(xv, na.rm = TRUE)
+  ylim <- range(yv, na.rm = TRUE)
+  graphics::plot(NA, xlim = xlim, ylim = ylim, xlab = xlab, ylab = ylab,
+                 main = main, xaxs = "i", yaxs = "i", axes = FALSE)
+
+  if (isTRUE(filled)) {
+    graphics::.filled.contour(xv, yv, z, levels = lc$levels, col = lc$cols)
+  }
+
+  if (isTRUE(contour) && (!isTRUE(x$is_vector) || !isTRUE(filled))) {
+    if (!isTRUE(x$is_vector)) {
+      c_col <- if (isTRUE(filled)) "gray25" else if (!is.null(col) && length(col) == 1L) col else "black"
+      graphics::contour(xv, yv, z, levels = lc$levels, add = TRUE, col = c_col,
+                        lwd = if (filled) 0.6 else 1.0)
+    }
+  }
+
+  if (isTRUE(map) && x$plot_type == "lonlat") {
+    .overlay_world_map(xlim, ylim, proj = "lonlat")
+  }
+
+  if (isTRUE(x$has_uv) && !is.null(x$u) && !is.null(x$v)) {
+    ref <- drawvec(xv, yv, x$u, x$v, length = length, uvref = uvref, skip = skip)
+    if (is.finite(ref)) {
+      graphics::mtext(sprintf("Ref vector: %s %s", signif(ref, 3), x$units),
+                      side = 1, line = 3, adj = 1, cex = 0.78, col = "gray30")
+    }
+  }
+
+  if (x$x_dim$axis == "lon") {
+    .format_deg_axis(1, pretty(xlim, n = 6), "lon")
+  } else {
+    graphics::axis(1)
+  }
+  if (x$y_dim$axis == "lat") {
+    .format_deg_axis(2, pretty(ylim, n = 6), "lat")
+  } else {
+    graphics::axis(2)
+  }
+  graphics::box()
+
+  if (isTRUE(filled)) {
+    fields::image.plot(
+      legend.only = TRUE,
+      zlim        = range(lc$levels),
+      breaks      = lc$levels,
+      col         = lc$cols,
+      legend.mar  = 4.2
+    )
+  }
+}
+
+.plot_projected_2d <- function(x, filled, contour, map, proj, lon0, lat0,
+                               nlevels, levels, col, skip, uvref, length,
+                               main, ...) {
+  lon <- x$x
+  lat <- x$y
+  z   <- x$z
+  nx  <- length(lon)
+  ny  <- length(lat)
+
+  lc <- .compute_levels_cols(z, nlevels = nlevels, levels = levels, col = col)
+  if (is.null(main)) main <- .default_title(x)
+
+  # Cell edges for filled quad rendering
+  dlon <- if (nx > 1L) diff(lon) else 1
+  dlat <- if (ny > 1L) diff(lat) else 1
+  lon_e <- c(lon[1L] - dlon[1L] / 2, lon[-nx] + dlon / 2, lon[nx] + dlon[nx - 1L] / 2)
+  lat_e <- c(lat[1L] - dlat[1L] / 2, lat[-ny] + dlat / 2, lat[ny] + dlat[ny - 1L] / 2)
+  lat_e <- pmax(pmin(lat_e, 89.9), -89.9)
+
+  # Project grid cell corners
+  LON_E <- rep(lon_e, times = ny + 1L)
+  LAT_E <- rep(lat_e, each  = nx + 1L)
+  pe <- nc_project(LON_E, LAT_E, proj = proj, lon0 = lon0, lat0 = lat0)
+  lon0 <- pe$lon0
+  lat0 <- pe$lat0
+  PX <- matrix(pe$x, nrow = nx + 1L, ncol = ny + 1L)
+  PY <- matrix(pe$y, nrow = nx + 1L, ncol = ny + 1L)
+
+  # Determine plot window bounds
+  if (pe$proj == "orthographic") {
+    xlim <- c(-1.05, 1.05)
+    ylim <- c(-1.05, 1.05)
+  } else {
+    xlim <- range(PX, finite = TRUE)
+    ylim <- range(PY, finite = TRUE)
+    if (!all(is.finite(xlim))) xlim <- c(-1, 1)
+    if (!all(is.finite(ylim))) ylim <- c(-1, 1)
+  }
+
+  old_mar <- graphics::par("mar")
+  if (isTRUE(filled)) {
+    on.exit(graphics::par(mar = old_mar), add = TRUE)
+    mar_new <- old_mar
+    mar_new[4L] <- max(mar_new[4L], 5.5)
+    graphics::par(mar = mar_new)
+  }
+
+  graphics::plot(NA, xlim = xlim, ylim = ylim, asp = 1,
+                 xlab = "", ylab = "", main = main, axes = FALSE)
+
+  if (isTRUE(filled)) {
+    # Vectorized polygon construction for projected quads
+    i_idx <- rep(seq_len(nx), times = ny)
+    j_idx <- rep(seq_len(ny), each  = nx)
+    x1 <- PX[cbind(i_idx,     j_idx)]
+    x2 <- PX[cbind(i_idx + 1L, j_idx)]
+    x3 <- PX[cbind(i_idx + 1L, j_idx + 1L)]
+    x4 <- PX[cbind(i_idx,     j_idx + 1L)]
+
+    y1 <- PY[cbind(i_idx,     j_idx)]
+    y2 <- PY[cbind(i_idx + 1L, j_idx)]
+    y3 <- PY[cbind(i_idx + 1L, j_idx + 1L)]
+    y4 <- PY[cbind(i_idx,     j_idx + 1L)]
+
+    z_vec <- as.vector(z)
+    c_idx <- findInterval(z_vec, lc$levels, all.inside = TRUE)
+    cell_cols <- lc$cols[c_idx]
+
+    # Filter out quads that cross the projection seam or contain NA vertices
+    span_x <- diff(xlim)
+    span_y <- diff(ylim)
+    max_dx <- pmax(abs(x2 - x1), abs(x3 - x2), abs(x4 - x3), abs(x1 - x4))
+    max_dy <- pmax(abs(y2 - y1), abs(y3 - y2), abs(y4 - y3), abs(y1 - y4))
+    valid <- !is.na(z_vec) & !is.na(max_dx) & !is.na(max_dy) &
+      (max_dx < 0.25 * span_x) & (max_dy < 0.25 * span_y)
+
+    if (any(valid)) {
+      vx <- rbind(x1[valid], x2[valid], x3[valid], x4[valid], NA_real_)
+      vy <- rbind(y1[valid], y2[valid], y3[valid], y4[valid], NA_real_)
+      graphics::polygon(as.vector(vx), as.vector(vy),
+                        col = cell_cols[valid], border = NA)
+    }
+  }
+
+  .draw_graticule(pe$proj, lon0 = lon0, lat0 = lat0)
+
+  if (isTRUE(map)) {
+    .overlay_world_map( range(lon), range(lat), proj = pe$proj,
+                        lon0 = lon0, lat0 = lat0 )
+  }
+
+  if (isTRUE(x$has_uv) && !is.null(x$u) && !is.null(x$v)) {
+    .draw_projected_vectors(lon, lat, x$u, x$v, proj = pe$proj,
+                            lon0 = lon0, lat0 = lat0,
+                            skip = skip, uvref = uvref, length = length)
+  }
+
+  if (isTRUE(filled)) {
+    fields::image.plot(
+      legend.only = TRUE,
+      zlim        = range(lc$levels),
+      breaks      = lc$levels,
+      col         = lc$cols,
+      legend.mar  = 4.2
+    )
+  }
+}
+
+.draw_projected_vectors <- function(lon, lat, u, v, proj, lon0, lat0,
+                                    skip = 1L, uvref = NA, length = 0.05) {
+  skip <- max(1L, as.integer(skip)[1L])
+  ix <- seq.int(1L, length(lon), by = skip)
+  iy <- seq.int(1L, length(lat), by = skip)
+  lon_s <- lon[ix]
+  lat_s <- lat[iy]
+  u_s <- as.vector(u[ix, iy, drop = FALSE])
+  v_s <- as.vector(v[ix, iy, drop = FALSE])
+
+  LON <- rep(lon_s, times = length(lat_s))
+  LAT <- rep(lat_s, each  = length(lon_s))
+
+  p0 <- nc_project(LON, LAT, proj = proj, lon0 = lon0, lat0 = lat0)
+  # Small displacement in meters-equivalent degrees to compute local tangent orientation
+  eps <- 0.25
+  cos_lat <- pmax(cos(LAT * pi / 180), 0.05)
+  p1 <- nc_project(LON + eps * u_s / cos_lat, LAT + eps * v_s,
+                   proj = proj, lon0 = lon0, lat0 = lat0)
+  dx <- p1$x - p0$x
+  dy <- p1$y - p0$y
+  dir_norm <- sqrt(dx^2 + dy^2)
+  spd <- sqrt(u_s^2 + v_s^2)
+  if (is.na(uvref)) uvref <- max(spd, na.rm = TRUE)
+  if (!is.finite(uvref) || uvref <= 0) return(invisible(uvref))
+
+  usr <- graphics::par("usr")
+  cell_d <- min((usr[2L] - usr[1L]) / length(lon_s),
+                (usr[4L] - usr[3L]) / length(lat_s))
+  scale_len <- 0.45 * cell_d * (spd / uvref)
+
+  keep <- !is.na(p0$x) & !is.na(p0$y) & !is.na(dir_norm) &
+    (dir_norm > 1e-9) & (spd > 1e-9)
+  if (any(keep)) {
+    ux <- (dx[keep] / dir_norm[keep]) * scale_len[keep]
+    vy <- (dy[keep] / dir_norm[keep]) * scale_len[keep]
+    graphics::arrows(p0$x[keep] - ux, p0$y[keep] - vy,
+                     p0$x[keep] + ux, p0$y[keep] + vy,
+                     length = length, col = "black")
+  }
+  invisible(uvref)
+}
+
+.plot_hovmoeller_slice <- function(x, filled, contour, nlevels, levels, col,
+                                   time_axis = "y", skip, uvref, length,
+                                   main, xlab, ylab, ...) {
+  time_on_y <- tolower(time_axis)[1L] != "x"
+  # In .slice_single_var, active_dims[[1]] is spatial (lon/lat) and active_dims[[2]] is time
+  s_dim <- x$x_dim
+  t_dim <- x$y_dim
+  s_vals <- x$x
+  t_vals <- if (!is.null(t_dim$time_posix)) as.numeric(t_dim$time_posix) else x$y
+  z <- x$z
+
+  if (!time_on_y) {
+    xv <- t_vals
+    yv <- s_vals
+    z  <- t(z)
+    if (is.null(xlab)) xlab <- "Time"
+    if (is.null(ylab)) ylab <- if (s_dim$axis == "lon") "Longitude" else "Latitude"
+  } else {
+    xv <- s_vals
+    yv <- t_vals
+    if (is.null(xlab)) xlab <- if (s_dim$axis == "lon") "Longitude" else "Latitude"
+    if (is.null(ylab)) ylab <- "Time"
+  }
+
+  lc <- .compute_levels_cols(z, nlevels = nlevels, levels = levels, col = col)
+  if (is.null(main)) main <- paste("Hovmoeller:", .default_title(x))
+
+  old_mar <- graphics::par("mar")
+  if (isTRUE(filled)) {
+    on.exit(graphics::par(mar = old_mar), add = TRUE)
+    mar_new <- old_mar
+    mar_new[4L] <- max(mar_new[4L], 5.5)
+    graphics::par(mar = mar_new)
+  }
+
+  xlim <- range(xv, na.rm = TRUE)
+  ylim <- range(yv, na.rm = TRUE)
+  graphics::plot(NA, xlim = xlim, ylim = ylim, xlab = xlab, ylab = ylab,
+                 main = main, xaxs = "i", yaxs = "i", axes = FALSE)
+
+  if (isTRUE(filled)) {
+    graphics::.filled.contour(xv, yv, z, levels = lc$levels, col = lc$cols)
+  }
+  if (isTRUE(contour)) {
+    graphics::contour(xv, yv, z, levels = lc$levels, add = TRUE,
+                      col = if (filled) "gray25" else "black",
+                      lwd = if (filled) 0.6 else 1.0)
+  }
+
+  # Format axes cleanly
+  if (time_on_y) {
+    if (s_dim$axis %in% c("lon", "lat")) {
+      .format_deg_axis(1, pretty(xlim, n = 6), s_dim$axis)
+    } else {
+      graphics::axis(1)
+    }
+    if (!is.null(t_dim$time_posix)) {
+      .draw_nice_time_axis(2, t_dim$time_posix)
+    } else {
+      graphics::axis(2)
+    }
+  } else {
+    if (!is.null(t_dim$time_posix)) {
+      .draw_nice_time_axis(1, t_dim$time_posix)
+    } else {
+      graphics::axis(1)
+    }
+    if (s_dim$axis %in% c("lon", "lat")) {
+      .format_deg_axis(2, pretty(ylim, n = 6), s_dim$axis)
+    } else {
+      graphics::axis(2)
+    }
+  }
+  graphics::box()
+
+  if (isTRUE(filled)) {
+    fields::image.plot(
+      legend.only = TRUE,
+      zlim        = range(lc$levels),
+      breaks      = lc$levels,
+      col         = lc$cols,
+      legend.mar  = 4.2
+    )
+  }
+}
+
+.draw_nice_time_axis <- function(side, t_posix) {
+  span_sec <- diff(range(as.numeric(t_posix), na.rm = TRUE))
+  fmt <- if (span_sec <= 3 * 86400) {
+    "%b %d %H:%M"
+  } else if (span_sec <= 180 * 86400) {
+    "%b %d"
+  } else if (span_sec <= 3 * 365 * 86400) {
+    "%Y-%m"
+  } else {
+    "%Y"
+  }
+  at_t <- pretty(t_posix, n = 6)
+  graphics::axis.POSIXct(side, at = at_t, format = fmt, las = if (side == 2) 1 else 0)
+}
+
+.is_pressure_dim <- function(d) {
+  un <- tolower(d$units)
+  pos <- tolower(d$positive)
+  if (pos == "down" || grepl("^(hpa|pa|mb|millibar|mbar|dbar)$", un) ||
+      grepl("pressure|plev|isobaric", tolower(d$name))) {
+    return(TRUE)
+  }
+  if (pos == "up" || grepl("^(m|km|meter|meters|kilometers)$", un) ||
+      grepl("height|alt|altitude", tolower(d$name))) {
+    return(FALSE)
+  }
+  # Fallback heuristic: standard atmospheric pressure levels in 10..1100
+  isTRUE(d$reversed) || (max(d$vals, na.rm = TRUE) >= 500 && min(d$vals, na.rm = TRUE) >= 1)
+}
+
+.plot_xsection_slice <- function(x, filled, contour, nlevels, levels, col,
+                                 zlog = TRUE, skip, uvref, length,
+                                 main, xlab, ylab, ...) {
+  s_dim <- x$x_dim
+  v_dim <- x$y_dim
+  xv <- x$x
+  lev <- x$y
+  z <- x$z
+
+  is_pres <- .is_pressure_dim(v_dim)
+  # Convert Pa to hPa for display if needed
+  pres_scale <- if (tolower(v_dim$units) == "pa" && max(lev, na.rm = TRUE) > 2000) 0.01 else 1.0
+  lev_disp <- lev * pres_scale
+
+  use_log <- is_pres && isTRUE(zlog) && all(lev_disp > 0)
+  if (use_log) {
+    # y_coord = -log(p) is strictly increasing when p is sorted decreasingly!
+    # Since lev_disp is currently sorted in ascending order (e.g. 100..1000),
+    # -log(lev_disp) is decreasing; reverse it so y_coord is strictly increasing
+    # from bottom (1000 hPa, -log(1000)) to top (100 hPa, -log(100))!
+    ord <- rev(seq_along(lev_disp))
+    lev_disp <- lev_disp[ord]
+    z <- z[, ord, drop = FALSE]
+    if (isTRUE(x$has_uv) && !is.null(x$u) && !is.null(x$v)) {
+      x$u <- x$u[, ord, drop = FALSE]
+      x$v <- x$v[, ord, drop = FALSE]
+    }
+    yv <- -log(lev_disp)
+    ylim <- range(yv, na.rm = TRUE) # bottom = -log(max_p), top = -log(min_p)
+  } else if (is_pres) {
+    yv <- lev_disp
+    ylim <- rev(range(yv, na.rm = TRUE)) # bottom = max_p, top = min_p
+  } else {
+    # Height coordinate (m or km)
+    h_scale <- if (tolower(v_dim$units) %in% c("m", "meter", "meters") && max(lev, na.rm = TRUE) > 500) 0.001 else 1.0
+    yv <- lev * h_scale
+    ylim <- range(yv, na.rm = TRUE)
+  }
+
+  lc <- .compute_levels_cols(z, nlevels = nlevels, levels = levels, col = col)
+  if (is.null(main)) main <- paste("Cross-Section:", .default_title(x))
+  if (is.null(xlab)) xlab <- if (s_dim$axis == "lon") "Longitude" else if (s_dim$axis == "lat") "Latitude" else s_dim$name
+  if (is.null(ylab)) ylab <- if (is_pres) "Pressure [hPa]" else "Height [km]"
+
+  old_mar <- graphics::par("mar")
+  on.exit(graphics::par(mar = old_mar), add = TRUE)
+  mar_new <- old_mar
+  # Extra right margin for both secondary height/pressure axis and colorbar
+  mar_new[4L] <- max(mar_new[4L], if (isTRUE(filled)) 7.8 else 4.8)
+  graphics::par(mar = mar_new)
+
+  xlim <- range(xv, na.rm = TRUE)
+  graphics::plot(NA, xlim = xlim, ylim = ylim, xlab = xlab, ylab = ylab,
+                 main = main, xaxs = "i", yaxs = "i", axes = FALSE)
+
+  if (isTRUE(filled)) {
+    graphics::.filled.contour(xv, yv, z, levels = lc$levels, col = lc$cols)
+  }
+  if (isTRUE(contour)) {
+    graphics::contour(xv, yv, z, levels = lc$levels, add = TRUE,
+                      col = if (filled) "gray25" else "black",
+                      lwd = if (filled) 0.6 else 1.0)
+  }
+
+  if (isTRUE(x$has_uv) && !is.null(x$u) && !is.null(x$v)) {
+    drawvec(xv, yv, x$u, x$v, length = length, uvref = uvref, skip = skip)
+  }
+
+  # Horizontal axis
+  if (s_dim$axis %in% c("lon", "lat")) {
+    .format_deg_axis(1, pretty(xlim, n = 6), s_dim$axis)
+  } else {
+    graphics::axis(1)
+  }
+
+  # Dual Vertical Axes: Left = Pressure (hPa) & Right = Height (km) (or vice-versa)
+  if (is_pres) {
+    std_p <- c(1000, 925, 850, 700, 500, 400, 300, 250, 200, 150, 100, 70, 50, 30, 20, 10)
+    prng <- range(lev_disp, na.rm = TRUE)
+    p_ticks <- std_p[std_p >= prng[1L] * 0.98 & std_p <= prng[2L] * 1.02]
+    if (length(p_ticks) < 3L) p_ticks <- pretty(prng, n = 6)
+    p_ticks <- p_ticks[p_ticks > 0]
+    y_at_p <- if (use_log) -log(p_ticks) else p_ticks
+    graphics::axis(2, at = y_at_p, labels = format(p_ticks, trim = TRUE), las = 1)
+
+    # Right axis: Standard-atmosphere Height [km]
+    z_rng <- pres2alt(prng)
+    z_ticks <- pretty(z_rng, n = 6)
+    p_of_z <- alt2pres(z_ticks)
+    y_at_z <- if (use_log) -log(p_of_z) else p_of_z
+    graphics::axis(4, at = y_at_z, labels = format(z_ticks, trim = TRUE), las = 1)
+    graphics::mtext("Height [km]", side = 4, line = 2.6, cex = 0.9)
+  } else {
+    # Primary coordinate is Height [km]
+    z_ticks <- pretty(ylim, n = 6)
+    graphics::axis(2, at = z_ticks, las = 1)
+
+    # Secondary axis: Pressure [hPa]
+    std_p <- c(1000, 850, 700, 500, 300, 200, 100, 50, 20, 10)
+    z_of_p <- pres2alt(std_p)
+    keep_p <- z_of_p >= ylim[1L] & z_of_p <= ylim[2L]
+    if (any(keep_p)) {
+      graphics::axis(4, at = z_of_p[keep_p], labels = std_p[keep_p], las = 1)
+      graphics::mtext("Pressure [hPa]", side = 4, line = 2.6, cex = 0.9)
+    }
+  }
+  graphics::box()
+
+  if (isTRUE(filled)) {
+    fields::image.plot(
+      legend.only = TRUE,
+      zlim        = range(lc$levels),
+      breaks      = lc$levels,
+      col         = lc$cols,
+      legend.mar  = 3.8
+    )
+  }
+}
+
+.plot_1d_slice <- function(x, main, xlab, ylab, zlog = TRUE, add = FALSE, ...) {
+  d <- x$x_dim
+  vals <- as.vector(x$z)
+  if (is.null(main)) main <- .default_title(x)
+  u_str <- if (nzchar(x$units)) sprintf(" [%s]", x$units) else ""
+
+  if (d$axis == "lev") {
+    is_pres <- .is_pressure_dim(d)
+    lev <- d$vals
+    use_log <- is_pres && isTRUE(zlog) && all(lev > 0)
+    yv <- if (use_log) -log(lev) else lev
+    ylim <- if (use_log) range(yv, na.rm = TRUE) else if (is_pres) rev(range(yv, na.rm = TRUE)) else range(yv, na.rm = TRUE)
+    if (is.null(xlab)) xlab <- paste0(x$var, u_str)
+    if (is.null(ylab)) ylab <- if (is_pres) "Pressure [hPa]" else "Height [km]"
+    if (isTRUE(add)) {
+      graphics::lines(vals, yv, ...)
+    } else {
+      graphics::plot(vals, yv, type = "b", pch = 19, ylim = ylim,
+                     xlab = xlab, ylab = ylab, main = main, axes = FALSE, ...)
+      graphics::axis(1)
+      if (is_pres) {
+        p_ticks <- pretty(lev, n = 6)
+        p_ticks <- p_ticks[p_ticks > 0]
+        graphics::axis(2, at = if (use_log) -log(p_ticks) else p_ticks,
+                       labels = p_ticks, las = 1)
+      } else {
+        graphics::axis(2, las = 1)
+      }
+      graphics::box()
+      graphics::grid()
+    }
+  } else if (d$axis == "time" && !is.null(d$time_posix)) {
+    tv <- d$time_posix
+    if (is.null(xlab)) xlab <- "Time"
+    if (is.null(ylab)) ylab <- paste0(x$var, u_str)
+    if (isTRUE(add)) {
+      graphics::lines(tv, vals, ...)
+    } else {
+      graphics::plot(tv, vals, type = "l", lwd = 1.5, xlab = xlab, ylab = ylab,
+                     main = main, xaxt = "n", ...)
+      .draw_nice_time_axis(1, tv)
+      graphics::grid()
+    }
+  } else {
+    if (is.null(xlab)) xlab <- d$name
+    if (is.null(ylab)) ylab <- paste0(x$var, u_str)
+    if (isTRUE(add)) {
+      graphics::lines(d$vals, vals, ...)
+    } else {
+      graphics::plot(d$vals, vals, type = "l", lwd = 1.5,
+                     xlab = xlab, ylab = ylab, main = main, ...)
+      graphics::grid()
+    }
+  }
+}
