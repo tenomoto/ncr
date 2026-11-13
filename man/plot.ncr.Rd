@@ -27,7 +27,9 @@
   skip = 1L,
   uvref = NA,
   length = 0.05,
+  add = FALSE,
   main = NULL,
+  sub = NULL,
   xlab = NULL,
   ylab = NULL
 )
@@ -52,6 +54,7 @@
   length = 0.05,
   add = FALSE,
   main = NULL,
+  sub = NULL,
   xlab = NULL,
   ylab = NULL
 )
@@ -86,7 +89,17 @@
   ...
 )
 
-\method{points}{ncr_slice}(x, skip = 1L, uvref = NA, length = 0.05, col = "black", ...)
+\method{points}{ncr_slice}(
+  x,
+  skip = 1L,
+  uvref = NA,
+  length = 0.05,
+  col = "black",
+  proj = NULL,
+  lon0 = NULL,
+  lat0 = NULL,
+  ...
+)
 }
 \arguments{
 \item{x}{An `"ncr"` or `"ncr_slice"` object.}
@@ -137,9 +150,9 @@ vertical axis logarithmically in pressure (default `TRUE`).}
 \item{length}{Arrowhead length in inches passed to [drawvec()] (default
 `0.05`).}
 
-\item{main, xlab, ylab}{Optional plot title and axis labels.}
-
 \item{add}{Logical; if `TRUE`, adds contours or vectors to the current plot.}
+
+\item{main, sub, xlab, ylab}{Optional plot title, subtitle, and axis labels.}
 
 \item{lon, lat, lev, time}{Optional dimension selectors passed to [nc_slice()]
 (for `contour.ncr()`).}

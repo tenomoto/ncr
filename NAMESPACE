@@ -2,6 +2,9 @@
 
 S3method("$",ncr)
 S3method("[",ncr)
+S3method(Math,ncr_slice)
+S3method(Ops,ncr_slice)
+S3method(Summary,ncr_slice)
 S3method(contour,ncr)
 S3method(contour,ncr_slice)
 S3method(names,ncr)

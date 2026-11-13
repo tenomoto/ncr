@@ -24,6 +24,9 @@
 #' @param uv Optional character vector of length 2 (`c("u", "v")`) to attach a
 #'   vector field overlay to a scalar slice.
 #' @param drop Logical; if `TRUE` (default), drops singleton dimensions.
+#' @param e1,e2 Operands for `Ops.ncr_slice()` (an `"ncr_slice"` object or a
+#'   numeric scalar/array).
+#' @param na.rm Logical; whether to remove `NA` values in `Summary.ncr_slice()`.
 #' @param ... Additional dimension selectors matched by exact dimension name in
 #'   the NetCDF file.
 #' @return An S3 object of class `"ncr_slice"`.
@@ -181,6 +184,80 @@ print.ncr_slice <- function(x, ...) {
     cat(sprintf("  Data range: [%s, %s]\n", rng[1L], rng[2L]))
   }
   invisible(x)
+}
+
+#' @rdname nc_slice
+#' @export
+Ops.ncr_slice <- function(e1, e2) {
+  op <- .Generic
+  if (missing(e2)) {
+    res <- e1
+    res$z <- do.call(op, list(e1$z))
+    res$var <- sprintf("%s(%s)", op, e1$var)
+    res$long_name <- sprintf("%s(%s)", op, e1$long_name)
+    res$is_vector <- FALSE
+    res$has_uv <- FALSE
+    res$u <- NULL
+    res$v <- NULL
+    if (!(op %in% c("+", "-"))) res$units <- ""
+    return(res)
+  }
+
+  s1 <- inherits(e1, "ncr_slice")
+  s2 <- inherits(e2, "ncr_slice")
+  if (s1 && s2) {
+    if (!identical(dim(e1$z), dim(e2$z))) {
+      stop("Incompatible slice dimensions for '", op, "'.", call. = FALSE)
+    }
+    res <- e1
+    res$z <- do.call(op, list(e1$z, e2$z))
+    res$var <- sprintf("(%s %s %s)", e1$var, op, e2$var)
+    res$long_name <- sprintf("(%s %s %s)", e1$long_name, op, e2$long_name)
+    res$units <- if ((op %in% c("+", "-")) && identical(e1$units, e2$units)) e1$units else ""
+  } else if (s1) {
+    res <- e1
+    res$z <- do.call(op, list(e1$z, e2))
+    lbl <- if (is.numeric(e2) && length(e2) == 1L) format(e2) else "expr"
+    res$var <- sprintf("(%s %s %s)", e1$var, op, lbl)
+    res$long_name <- sprintf("(%s %s %s)", e1$long_name, op, lbl)
+    res$units <- ""
+  } else {
+    res <- e2
+    res$z <- do.call(op, list(e1, e2$z))
+    lbl <- if (is.numeric(e1) && length(e1) == 1L) format(e1) else "expr"
+    res$var <- sprintf("(%s %s %s)", lbl, op, e2$var)
+    res$long_name <- sprintf("(%s %s %s)", lbl, op, e2$long_name)
+    res$units <- ""
+  }
+
+  res$is_vector <- FALSE
+  res$has_uv <- FALSE
+  res$u <- NULL
+  res$v <- NULL
+  res
+}
+
+#' @rdname nc_slice
+#' @export
+Math.ncr_slice <- function(x, ...) {
+  res <- x
+  res$z <- get(.Generic, mode = "function")(x$z, ...)
+  res$var <- sprintf("%s(%s)", .Generic, x$var)
+  res$long_name <- sprintf("%s(%s)", .Generic, x$long_name)
+  res$units <- ""
+  res$is_vector <- FALSE
+  res$has_uv <- FALSE
+  res$u <- NULL
+  res$v <- NULL
+  res
+}
+
+#' @rdname nc_slice
+#' @export
+Summary.ncr_slice <- function(..., na.rm = FALSE) {
+  args <- list(...)
+  vals <- lapply(args, function(a) if (inherits(a, "ncr_slice")) a$z else a)
+  do.call(get(.Generic, mode = "function"), c(vals, list(na.rm = na.rm)))
 }
 
 .slice_single_var <- function(x, var, lon, lat, lev, time, drop = TRUE, ...) {

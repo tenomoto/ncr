@@ -2,11 +2,18 @@
 #'
 #' Plots a 2D vector field `(u, v)` on an existing base R graphics device,
 #' scaling arrow lengths automatically to the grid spacing and plot window
-#' (`par("usr")`).
+#' (`par("usr")`). Accepts either two `"ncr_slice"` objects `drawvec(u, v)`,
+#' a single vector `"ncr_slice"` object `drawvec(uv)`, or explicit numeric
+#' coordinates and matrices `drawvec(x, y, u, v)`.
 #'
-#' @param x,y Numeric vectors of grid coordinates along the X and Y axes.
+#' @param x Numeric vector of X coordinates, an `"ncr_slice"` object for the
+#'   `u` component (when `y` is an `"ncr_slice"` for `v`), or a vector
+#'   `"ncr_slice"` object (created via `nc[c("u", "v")]`).
+#' @param y Numeric vector of Y coordinates, an `"ncr_slice"` object for the
+#'   `v` component, or `NULL` when `x` is a vector `"ncr_slice"`.
 #' @param u,v Numeric matrices (or vectors) of horizontal and vertical vector
-#'   components matching `length(x)` by `length(y)`.
+#'   components matching `length(x)` by `length(y)` (ignored when `x` is an
+#'   `"ncr_slice"`).
 #' @param length Arrowhead length in inches passed to [graphics::arrows()]
 #'   (default `0.05`).
 #' @param uvref Reference vector magnitude used for scaling. If `NA` (default),
@@ -14,6 +21,8 @@
 #' @param skip Integer subsampling stride (`1L` plots every grid point, `2L`
 #'   plots every second point along `x` and `y`).
 #' @param col Arrow color (default `"black"`).
+#' @param proj,lon0,lat0 Optional map projection settings when `x` is an
+#'   `"ncr_slice"` (defaults to `nc_get()`).
 #' @param ... Additional graphical parameters passed to [graphics::arrows()].
 #' @return Invisibly returns the reference magnitude `uvref`.
 #' @examples
@@ -24,7 +33,46 @@
 #' plot(NA, xlim = range(x), ylim = range(y), xlab = "lon", ylab = "lat")
 #' drawvec(x, y, u, v)
 #' @export
-drawvec <- function(x, y, u, v, length = 0.05, uvref = NA, skip = 1L, col = "black", ...) {
+drawvec <- function(x, y = NULL, u = NULL, v = NULL,
+                    length = 0.05, uvref = NA, skip = 1L, col = "black",
+                    proj = NULL, lon0 = NULL, lat0 = NULL, ...) {
+  if (inherits(x, "ncr_slice")) {
+    s <- x
+    if (inherits(y, "ncr_slice")) {
+      if (!identical(dim(x$z), dim(y$z))) {
+        stop("'u' and 'v' slices must have identical dimensions.", call. = FALSE)
+      }
+      u_mat <- x$z
+      v_mat <- y$z
+    } else if (isTRUE(s$has_uv) && !is.null(s$u) && !is.null(s$v)) {
+      u_mat <- s$u
+      v_mat <- s$v
+    } else {
+      stop("Provide either drawvec(u_slice, v_slice) or a vector slice from nc[c('u', 'v')].",
+           call. = FALSE)
+    }
+
+    if (is.null(proj)) proj <- nc_get()$proj
+    if (is.null(lon0)) lon0 <- nc_get()$lon0
+    if (is.null(lat0)) lat0 <- nc_get()$lat0
+    proj_norm <- tolower(trimws(as.character(proj)[1L]))
+    is_proj <- (s$plot_type == "lonlat") &&
+      !(proj_norm %in% c("lonlat", "cylindrical", "equirectangular", "eqc", "none", ""))
+    if (is_proj) {
+      return(.draw_projected_vectors(s$x, s$y, u_mat, v_mat, proj = proj_norm,
+                                     lon0 = lon0, lat0 = lat0,
+                                     skip = skip, uvref = uvref, length = length,
+                                     col = col, ...))
+    }
+    x <- s$x
+    y <- s$y
+    u <- u_mat
+    v <- v_mat
+  } else if (is.null(y) || is.null(u) || is.null(v)) {
+    stop("Numeric drawvec() requires x, y, u, and v (or pass ncr_slice objects).",
+         call. = FALSE)
+  }
+
   skip <- max(1L, as.integer(skip)[1L])
   if (skip > 1L && is.matrix(u) && is.matrix(v)) {
     ix <- seq.int(1L, length(x), by = skip)
@@ -130,7 +178,7 @@ alt2pres <- function(z, p0 = 1013.25, H = 7.2) {
 #' @param length Arrowhead length in inches passed to [drawvec()] (default
 #'   `0.05`).
 #' @param add Logical; if `TRUE`, adds contours or vectors to the current plot.
-#' @param main,xlab,ylab Optional plot title and axis labels.
+#' @param main,sub,xlab,ylab Optional plot title, subtitle, and axis labels.
 #' @param ... Additional slicing arguments (`lon`, `lat`, `lev`, `time`) when
 #'   `x` is an `"ncr"` object, or graphical parameters passed to underlying plot
 #'   functions.
@@ -174,7 +222,9 @@ plot.ncr <- function(x,
                      skip = 1L,
                      uvref = NA,
                      length = 0.05,
+                     add = FALSE,
                      main = NULL,
+                     sub = NULL,
                      xlab = NULL,
                      ylab = NULL) {
   uv_slice <- if (inherits(uv, "ncr_slice")) uv else NULL
@@ -201,7 +251,9 @@ plot.ncr <- function(x,
     skip      = skip,
     uvref     = uvref,
     length    = length,
+    add       = add,
     main      = main,
+    sub       = sub,
     xlab      = xlab,
     ylab      = ylab
   )
@@ -228,6 +280,7 @@ plot.ncr_slice <- function(x,
                            length = 0.05,
                            add = FALSE,
                            main = NULL,
+                           sub = NULL,
                            xlab = NULL,
                            ylab = NULL) {
   if (inherits(uv, "ncr_slice")) {
@@ -245,7 +298,7 @@ plot.ncr_slice <- function(x,
   if (is.null(lat0)) lat0 <- nc_get()$lat0
 
   if (x$plot_type == "1d" || length(x$active_dims) == 1L) {
-    .plot_1d_slice(x, main = main, xlab = xlab, ylab = ylab, zlog = zlog,
+    .plot_1d_slice(x, main = main, sub = sub, xlab = xlab, ylab = ylab, zlog = zlog,
                    add = add, ...)
     return(invisible(x))
   }
@@ -255,7 +308,7 @@ plot.ncr_slice <- function(x,
       x, filled = filled, contour = contour, nlevels = nlevels,
       levels = levels, col = col, time_axis = time_axis,
       skip = skip, uvref = uvref, length = length,
-      main = main, xlab = xlab, ylab = ylab, ...
+      main = main, sub = sub, xlab = xlab, ylab = ylab, ...
     )
     return(invisible(x))
   }
@@ -265,7 +318,7 @@ plot.ncr_slice <- function(x,
       x, filled = filled, contour = contour, nlevels = nlevels,
       levels = levels, col = col, zlog = zlog,
       skip = skip, uvref = uvref, length = length,
-      main = main, xlab = xlab, ylab = ylab, ...
+      main = main, sub = sub, xlab = xlab, ylab = ylab, ...
     )
     return(invisible(x))
   }
@@ -276,7 +329,7 @@ plot.ncr_slice <- function(x,
     proj = proj, lon0 = lon0, lat0 = lat0,
     nlevels = nlevels, levels = levels, col = col,
     skip = skip, uvref = uvref, length = length,
-    add = add, main = main, xlab = xlab, ylab = ylab, ...
+    add = add, main = main, sub = sub, xlab = xlab, ylab = ylab, ...
   )
   invisible(x)
 }
@@ -333,12 +386,25 @@ contour.ncr_slice <- function(x,
 
 #' @rdname plot.ncr
 #' @export
-points.ncr_slice <- function(x, skip = 1L, uvref = NA, length = 0.05, col = "black", ...) {
+points.ncr_slice <- function(x, skip = 1L, uvref = NA, length = 0.05, col = "black",
+                             proj = NULL, lon0 = NULL, lat0 = NULL, ...) {
   if (!isTRUE(x$has_uv) || is.null(x$u) || is.null(x$v)) {
     stop("'points.ncr_slice' requires a vector slice (created with c('u', 'v') or uv = c('u', 'v')).",
          call. = FALSE)
   }
-  drawvec(x$x, x$y, x$u, x$v, length = length, uvref = uvref, skip = skip, col = col, ...)
+  if (is.null(proj)) proj <- nc_get()$proj
+  if (is.null(lon0)) lon0 <- nc_get()$lon0
+  if (is.null(lat0)) lat0 <- nc_get()$lat0
+  proj_norm <- tolower(trimws(as.character(proj)[1L]))
+  is_proj <- (x$plot_type == "lonlat") &&
+    !(proj_norm %in% c("lonlat", "cylindrical", "equirectangular", "eqc", "none", ""))
+  if (is_proj) {
+    .draw_projected_vectors(x$x, x$y, x$u, x$v, proj = proj_norm,
+                            lon0 = lon0, lat0 = lat0,
+                            skip = skip, uvref = uvref, length = length)
+  } else {
+    drawvec(x$x, x$y, x$u, x$v, length = length, uvref = uvref, skip = skip, col = col, ...)
+  }
 }
 
 #' Hovmoeller Diagram and Vertical Cross-Section Helpers
@@ -534,7 +600,7 @@ nc_xsection <- function(x,
 
 .plot_2d_slice <- function(x, filled, contour, map, proj, lon0, lat0,
                            nlevels, levels, col, skip, uvref, length,
-                           add, main, xlab, ylab, ...) {
+                           add, main, sub = NULL, xlab, ylab, ...) {
   proj_norm <- tolower(trimws(as.character(proj)[1L]))
   is_proj <- (x$plot_type == "lonlat") &&
     !(proj_norm %in% c("lonlat", "cylindrical", "equirectangular", "eqc", "none", ""))
@@ -545,7 +611,7 @@ nc_xsection <- function(x,
       proj = proj_norm, lon0 = lon0, lat0 = lat0,
       nlevels = nlevels, levels = levels, col = col,
       skip = skip, uvref = uvref, length = length,
-      main = main, ...
+      main = main, sub = sub, ...
     )
     return(invisible(x))
   }
@@ -584,7 +650,7 @@ nc_xsection <- function(x,
   xlim <- range(xv, na.rm = TRUE)
   ylim <- range(yv, na.rm = TRUE)
   graphics::plot(NA, xlim = xlim, ylim = ylim, xlab = xlab, ylab = ylab,
-                 main = main, xaxs = "i", yaxs = "i", axes = FALSE)
+                 main = main, sub = sub, xaxs = "i", yaxs = "i", axes = FALSE, ...)
 
   if (isTRUE(filled)) {
     graphics::.filled.contour(xv, yv, z, levels = lc$levels, col = lc$cols)
@@ -635,7 +701,7 @@ nc_xsection <- function(x,
 
 .plot_projected_2d <- function(x, filled, contour, map, proj, lon0, lat0,
                                nlevels, levels, col, skip, uvref, length,
-                               main, ...) {
+                               main, sub = NULL, ...) {
   lon <- x$x
   lat <- x$y
   z   <- x$z
@@ -666,10 +732,8 @@ nc_xsection <- function(x,
     xlim <- c(-1.05, 1.05)
     ylim <- c(-1.05, 1.05)
   } else {
-    xlim <- range(PX, finite = TRUE)
-    ylim <- range(PY, finite = TRUE)
-    if (!all(is.finite(xlim))) xlim <- c(-1, 1)
-    if (!all(is.finite(ylim))) ylim <- c(-1, 1)
+    xlim <- if (any(is.finite(PX))) range(PX, finite = TRUE) else c(-1, 1)
+    ylim <- if (any(is.finite(PY))) range(PY, finite = TRUE) else c(-1, 1)
   }
 
   old_mar <- graphics::par("mar")
@@ -681,7 +745,7 @@ nc_xsection <- function(x,
   }
 
   graphics::plot(NA, xlim = xlim, ylim = ylim, asp = 1,
-                 xlab = "", ylab = "", main = main, axes = FALSE)
+                 xlab = "", ylab = "", main = main, sub = sub, axes = FALSE, ...)
 
   if (isTRUE(filled)) {
     # Vectorized polygon construction for projected quads
@@ -755,7 +819,8 @@ nc_xsection <- function(x,
 }
 
 .draw_projected_vectors <- function(lon, lat, u, v, proj, lon0, lat0,
-                                    skip = 1L, uvref = NA, length = 0.05) {
+                                    skip = 1L, uvref = NA, length = 0.05,
+                                    col = "black", ...) {
   skip <- max(1L, as.integer(skip)[1L])
   iy <- seq.int(1L, length(lat), by = skip)
   # Exclude exact poles where zonal tangent direction is singular
@@ -808,14 +873,14 @@ nc_xsection <- function(x,
   if (any(keep)) {
     graphics::arrows(p0$x[keep] - ux_all[keep], p0$y[keep] - vy_all[keep],
                      p0$x[keep] + ux_all[keep], p0$y[keep] + vy_all[keep],
-                     length = length, col = "black")
+                     length = length, col = col, ...)
   }
   invisible(uvref)
 }
 
 .plot_hovmoeller_slice <- function(x, filled, contour, nlevels, levels, col,
                                    time_axis = "y", skip, uvref, length,
-                                   main, xlab, ylab, ...) {
+                                   main, sub = NULL, xlab, ylab, ...) {
   time_on_y <- tolower(time_axis)[1L] != "x"
   # In .slice_single_var, active_dims[[1]] is spatial (lon/lat) and active_dims[[2]] is time
   s_dim <- x$x_dim
@@ -851,7 +916,7 @@ nc_xsection <- function(x,
   xlim <- range(xv, na.rm = TRUE)
   ylim <- range(yv, na.rm = TRUE)
   graphics::plot(NA, xlim = xlim, ylim = ylim, xlab = xlab, ylab = ylab,
-                 main = main, xaxs = "i", yaxs = "i", axes = FALSE)
+                 main = main, sub = sub, xaxs = "i", yaxs = "i", axes = FALSE, ...)
 
   if (isTRUE(filled)) {
     graphics::.filled.contour(xv, yv, z, levels = lc$levels, col = lc$cols)
@@ -931,7 +996,7 @@ nc_xsection <- function(x,
 
 .plot_xsection_slice <- function(x, filled, contour, nlevels, levels, col,
                                  zlog = TRUE, skip, uvref, length,
-                                 main, xlab, ylab, ...) {
+                                 main, sub = NULL, xlab, ylab, ...) {
   s_dim <- x$x_dim
   v_dim <- x$y_dim
   xv <- x$x
@@ -1048,7 +1113,7 @@ nc_xsection <- function(x,
   }
 }
 
-.plot_1d_slice <- function(x, main, xlab, ylab, zlog = TRUE, add = FALSE, ...) {
+.plot_1d_slice <- function(x, main, sub = NULL, xlab, ylab, zlog = TRUE, add = FALSE, ...) {
   d <- x$x_dim
   vals <- as.vector(x$z)
   if (is.null(main)) main <- .default_title(x)

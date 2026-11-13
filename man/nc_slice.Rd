@@ -5,6 +5,9 @@
 \alias{[.ncr}
 \alias{$.ncr}
 \alias{print.ncr_slice}
+\alias{Ops.ncr_slice}
+\alias{Math.ncr_slice}
+\alias{Summary.ncr_slice}
 \title{Slice a NetCDF Dataset Using Global State or Explicit Bounds}
 \usage{
 nc_slice(
@@ -34,6 +37,12 @@ nc_slice(
 \method{$}{ncr}(x, name)
 
 \method{print}{ncr_slice}(x, ...)
+
+\method{Ops}{ncr_slice}(e1, e2)
+
+\method{Math}{ncr_slice}(x, ...)
+
+\method{Summary}{ncr_slice}(..., na.rm = FALSE)
 }
 \arguments{
 \item{x}{An `"ncr"` object returned by [nc_open()].}
@@ -64,6 +73,11 @@ vector field overlay to a scalar slice.}
 the NetCDF file.}
 
 \item{name}{Variable name for `$` extraction (e.g., `nc$temp`).}
+
+\item{e1, e2}{Operands for `Ops.ncr_slice()` (an `"ncr_slice"` object or a
+numeric scalar/array).}
+
+\item{na.rm}{Logical; whether to remove `NA` values in `Summary.ncr_slice()`.}
 }
 \value{
 An S3 object of class `"ncr_slice"`.
