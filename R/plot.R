@@ -440,6 +440,38 @@ nc_xsection <- function(x,
   list(levels = levels, cols = cols)
 }
 
+.pretty_deg_ticks <- function(lim, axis_type = c("lon", "lat"), target_n = 6L) {
+  axis_type <- match.arg(axis_type)
+  lim <- sort(range(lim, na.rm = TRUE))
+  span <- diff(lim)
+  if (!is.finite(span) || span <= 0) return(lim[1L])
+
+  steps <- if (axis_type == "lon") {
+    c(1, 2, 5, 10, 15, 30, 45, 60, 90)
+  } else {
+    c(1, 2, 5, 10, 15, 30, 45, 90)
+  }
+
+  counts <- vapply(steps, function(s) {
+    lo <- ceiling((lim[1L] - 1e-9) / s) * s
+    hi <- floor((lim[2L] + 1e-9) / s) * s
+    if (hi < lo) return(0L)
+    as.integer(round((hi - lo) / s)) + 1L
+  }, integer(1))
+
+  valid <- which(counts >= 3L & counts <= 9L)
+  best <- if (length(valid) > 0L) {
+    valid[which.min(abs(counts[valid] - target_n))]
+  } else {
+    which.min(abs(counts - target_n))
+  }
+  step <- steps[best]
+  lo <- ceiling((lim[1L] - 1e-9) / step) * step
+  hi <- floor((lim[2L] + 1e-9) / step) * step
+  if (hi < lo) return(pretty(lim, n = target_n))
+  seq(lo, hi, by = step)
+}
+
 .format_deg_axis <- function(side, at, axis_type = c("lon", "lat")) {
   axis_type <- match.arg(axis_type)
   labs <- vapply(at, function(v) {
@@ -566,12 +598,12 @@ nc_xsection <- function(x,
   }
 
   if (x$x_dim$axis == "lon") {
-    .format_deg_axis(1, pretty(xlim, n = 6), "lon")
+    .format_deg_axis(1, .pretty_deg_ticks(xlim, "lon"), "lon")
   } else {
     graphics::axis(1)
   }
   if (x$y_dim$axis == "lat") {
-    .format_deg_axis(2, pretty(ylim, n = 6), "lat")
+    .format_deg_axis(2, .pretty_deg_ticks(ylim, "lat"), "lat")
   } else {
     graphics::axis(2)
   }
@@ -791,7 +823,7 @@ nc_xsection <- function(x,
   # Format axes cleanly
   if (time_on_y) {
     if (s_dim$axis %in% c("lon", "lat")) {
-      .format_deg_axis(1, pretty(xlim, n = 6), s_dim$axis)
+      .format_deg_axis(1, .pretty_deg_ticks(xlim, s_dim$axis), s_dim$axis)
     } else {
       graphics::axis(1)
     }
@@ -807,7 +839,7 @@ nc_xsection <- function(x,
       graphics::axis(1)
     }
     if (s_dim$axis %in% c("lon", "lat")) {
-      .format_deg_axis(2, pretty(ylim, n = 6), s_dim$axis)
+      .format_deg_axis(2, .pretty_deg_ticks(ylim, s_dim$axis), s_dim$axis)
     } else {
       graphics::axis(2)
     }
@@ -925,7 +957,7 @@ nc_xsection <- function(x,
 
   # Horizontal axis
   if (s_dim$axis %in% c("lon", "lat")) {
-    .format_deg_axis(1, pretty(xlim, n = 6), s_dim$axis)
+    .format_deg_axis(1, .pretty_deg_ticks(xlim, s_dim$axis), s_dim$axis)
   } else {
     graphics::axis(1)
   }

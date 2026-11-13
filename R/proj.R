@@ -175,7 +175,6 @@ nc_project <- function(lon, lat, proj = "lonlat", lon0 = NULL, lat0 = NULL) {
 
 .draw_graticule <- function(proj, lon0, lat0, col = "gray75", lty = 3) {
   lons <- seq(-180, 150, by = 30)
-  lats <- seq(-80, 80, by = 2:2 * 15) # every 30 deg
   lats <- seq(-60, 60, by = 30)
 
   lat_fine <- seq(-85, 85, length.out = 90)
