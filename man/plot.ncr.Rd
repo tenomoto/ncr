@@ -56,7 +56,17 @@
   ylab = NULL
 )
 
-\method{contour}{ncr}(x, var = NULL, filled = FALSE, ...)
+\method{contour}{ncr}(
+  x,
+  var = NULL,
+  lon = missing_arg(),
+  lat = missing_arg(),
+  lev = missing_arg(),
+  time = missing_arg(),
+  uv = NULL,
+  filled = FALSE,
+  ...
+)
 
 \method{contour}{ncr_slice}(
   x,
@@ -130,6 +140,9 @@ vertical axis logarithmically in pressure (default `TRUE`).}
 \item{main, xlab, ylab}{Optional plot title and axis labels.}
 
 \item{add}{Logical; if `TRUE`, adds contours or vectors to the current plot.}
+
+\item{lon, lat, lev, time}{Optional dimension selectors passed to [nc_slice()]
+(for `contour.ncr()`).}
 }
 \value{
 Invisibly returns the plotted `"ncr_slice"` object.

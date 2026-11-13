@@ -5,7 +5,7 @@
 #'   dim.def.nc dim.inq.nc file.inq.nc open.nc sync.nc utcal.nc var.def.nc
 #'   var.get.nc var.inq.nc var.put.nc
 #' @importFrom fields image.plot
-#' @importFrom grDevices adjustcolor hcl.colors hcl.pals
+#' @importFrom grDevices adjustcolor contourLines hcl.colors hcl.pals
 #' @importFrom graphics .filled.contour abline arrows axis axis.POSIXct box
 #'   contour grid lines mtext par plot plot.new plot.window points polygon rect
 #'   text title

@@ -46,6 +46,7 @@ importFrom(RNetCDF,
 importFrom(fields,image.plot)
 importFrom(grDevices,
   adjustcolor,
+  contourLines,
   hcl.colors,
   hcl.pals
 )

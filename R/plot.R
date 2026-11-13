@@ -45,7 +45,11 @@ drawvec <- function(x, y, u, v, length = 0.05, uvref = NA, skip = 1L, col = "bla
   v <- 0.5 * as.vector(v) * d
   X <- rep(x, times = length(y))
   Y <- rep(y, each  = length(x))
-  keep <- !is.na(u) & !is.na(v) & !is.na(X) & !is.na(Y) & ((abs(u) + abs(v)) > 1e-12)
+  pin <- graphics::par("pin")
+  dx_in <- (2 * u) * pin[1L] / max(abs(usr[2L] - usr[1L]), 1e-12)
+  dy_in <- (2 * v) * pin[2L] / max(abs(usr[4L] - usr[3L]), 1e-12)
+  len_in <- sqrt(dx_in^2 + dy_in^2)
+  keep <- !is.na(u) & !is.na(v) & !is.na(X) & !is.na(Y) & (len_in >= 1e-3)
   if (any(keep)) {
     graphics::arrows(X[keep] - u[keep], Y[keep] - v[keep],
                      X[keep] + u[keep], Y[keep] + v[keep],
@@ -99,6 +103,8 @@ alt2pres <- function(z, p0 = 1013.25, H = 7.2) {
 #' @param var Optional variable name(s) when `x` is an `"ncr"` object:
 #'   length 1 for scalar, length 2 for vector `c("u", "v")`, or length 3 for
 #'   scalar + vector `c("temp", "u", "v")`.
+#' @param lon,lat,lev,time Optional dimension selectors passed to [nc_slice()]
+#'   (for `contour.ncr()`).
 #' @param filled Logical; if `TRUE` (default for scalar `plot()`), draws filled
 #'   contours with a colorbar via [fields::image.plot()].
 #' @param contour Logical; if `TRUE`, draws contour lines over filled contours.
@@ -277,8 +283,15 @@ plot.ncr_slice <- function(x,
 
 #' @rdname plot.ncr
 #' @export
-contour.ncr <- function(x, var = NULL, filled = FALSE, ...) {
-  s <- nc_slice(x, var = var, ...)
+contour.ncr <- function(x, var = NULL,
+                        lon = missing_arg(),
+                        lat = missing_arg(),
+                        lev = missing_arg(),
+                        time = missing_arg(),
+                        uv = NULL,
+                        filled = FALSE,
+                        ...) {
+  s <- nc_slice(x, var = var, lon = lon, lat = lat, lev = lev, time = time, uv = uv)
   contour.ncr_slice(s, filled = filled, ...)
 }
 
@@ -704,6 +717,19 @@ nc_xsection <- function(x,
     }
   }
 
+  if (isTRUE(contour) && !isTRUE(x$is_vector)) {
+    clines <- grDevices::contourLines(lon, lat, z, levels = lc$levels)
+    c_col <- if (isTRUE(filled)) "gray25" else if (!is.null(col) && length(col) == 1L) col else "black"
+    c_lwd <- if (isTRUE(filled)) 0.6 else 1.0
+    for (cl in clines) {
+      pc <- .project_map_lines(list(x = cl$x, y = cl$y),
+                               proj = pe$proj, lon0 = lon0, lat0 = lat0)
+      if (any(!is.na(pc$x)) && any(!is.na(pc$y))) {
+        graphics::lines(pc$x, pc$y, col = c_col, lwd = c_lwd)
+      }
+    }
+  }
+
   .draw_graticule(pe$proj, lon0 = lon0, lat0 = lat0)
 
   if (isTRUE(map)) {
@@ -731,18 +757,28 @@ nc_xsection <- function(x,
 .draw_projected_vectors <- function(lon, lat, u, v, proj, lon0, lat0,
                                     skip = 1L, uvref = NA, length = 0.05) {
   skip <- max(1L, as.integer(skip)[1L])
-  ix <- seq.int(1L, length(lon), by = skip)
   iy <- seq.int(1L, length(lat), by = skip)
-  lon_s <- lon[ix]
-  lat_s <- lat[iy]
-  u_s <- as.vector(u[ix, iy, drop = FALSE])
-  v_s <- as.vector(v[ix, iy, drop = FALSE])
+  # Exclude exact poles where zonal tangent direction is singular
+  iy <- iy[abs(lat[iy]) <= 89.5]
+  if (length(iy) == 0L) return(invisible(NA_real_))
 
-  LON <- rep(lon_s, times = length(lat_s))
-  LAT <- rep(lat_s, each  = length(lon_s))
+  # Latitude-adaptive longitude thinning so arrows do not crowd near the poles
+  LON <- numeric(0)
+  LAT <- numeric(0)
+  u_s <- numeric(0)
+  v_s <- numeric(0)
+  for (j in iy) {
+    cos_j <- max(cos(lat[j] * pi / 180), 0.08)
+    step_lon <- max(skip, as.integer(round(skip / cos_j)))
+    ix_j <- seq.int(1L, length(lon), by = step_lon)
+    LON <- c(LON, lon[ix_j])
+    LAT <- c(LAT, rep(lat[j], length(ix_j)))
+    u_s <- c(u_s, u[ix_j, j])
+    v_s <- c(v_s, v[ix_j, j])
+  }
 
   p0 <- nc_project(LON, LAT, proj = proj, lon0 = lon0, lat0 = lat0)
-  # Small displacement in meters-equivalent degrees to compute local tangent orientation
+  # Small displacement in degrees to compute local projected tangent orientation
   eps <- 0.25
   cos_lat <- pmax(cos(LAT * pi / 180), 0.05)
   p1 <- nc_project(LON + eps * u_s / cos_lat, LAT + eps * v_s,
@@ -755,17 +791,23 @@ nc_xsection <- function(x,
   if (!is.finite(uvref) || uvref <= 0) return(invisible(uvref))
 
   usr <- graphics::par("usr")
-  cell_d <- min((usr[2L] - usr[1L]) / length(lon_s),
-                (usr[4L] - usr[3L]) / length(lat_s))
-  scale_len <- 0.45 * cell_d * (spd / uvref)
+  pin <- graphics::par("pin")
+  # Base arrow scale on visible latitude rows across the plot height
+  n_vis_y <- max(length(unique(LAT[!is.na(p0$x) & !is.na(p0$y)])), 6L)
+  cell_d <- min(abs(usr[2L] - usr[1L]), abs(usr[4L] - usr[3L])) / n_vis_y
+  scale_len <- 0.55 * cell_d * (spd / uvref)
+
+  ux_all <- (dx / dir_norm) * scale_len
+  vy_all <- (dy / dir_norm) * scale_len
+  dx_in <- (2 * ux_all) * pin[1L] / max(abs(usr[2L] - usr[1L]), 1e-12)
+  dy_in <- (2 * vy_all) * pin[2L] / max(abs(usr[4L] - usr[3L]), 1e-12)
+  len_in <- sqrt(dx_in^2 + dy_in^2)
 
   keep <- !is.na(p0$x) & !is.na(p0$y) & !is.na(dir_norm) &
-    (dir_norm > 1e-9) & (spd > 1e-9)
+    (dir_norm > 1e-9) & (spd > 1e-9) & is.finite(len_in) & (len_in >= 1e-3)
   if (any(keep)) {
-    ux <- (dx[keep] / dir_norm[keep]) * scale_len[keep]
-    vy <- (dy[keep] / dir_norm[keep]) * scale_len[keep]
-    graphics::arrows(p0$x[keep] - ux, p0$y[keep] - vy,
-                     p0$x[keep] + ux, p0$y[keep] + vy,
+    graphics::arrows(p0$x[keep] - ux_all[keep], p0$y[keep] - vy_all[keep],
+                     p0$x[keep] + ux_all[keep], p0$y[keep] + vy_all[keep],
                      length = length, col = "black")
   }
   invisible(uvref)

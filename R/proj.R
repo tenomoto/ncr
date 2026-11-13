@@ -114,8 +114,9 @@ nc_project <- function(lon, lat, proj = "lonlat", lon0 = NULL, lat0 = NULL) {
     y <- ifelse(vis, cos(phi0) * sin(phi) - sin(phi0) * cos(phi) * cos(lam), NA_real_)
   } else if (proj == "stereographic") {
     cos_c <- sin(phi0) * sin(phi) + cos(phi0) * cos(phi) * cos(lam)
-    # Clip points within 20 deg of the antipode to prevent blowup
-    vis <- !is.na(cos_c) & (cos_c > -0.85)
+    # Clip polar stereographic at the centered hemisphere; general stereographic at cos_c > -0.5
+    min_cos <- if (abs(lat0) >= 89) -1e-6 else -0.5
+    vis <- !is.na(cos_c) & (cos_c > min_cos)
     k <- ifelse(vis, 2 / (1 + cos_c), NA_real_)
     x <- k * cos(phi) * sin(lam)
     y <- k * (cos(phi0) * sin(phi) - sin(phi0) * cos(phi) * cos(lam))
@@ -156,7 +157,7 @@ nc_project <- function(lon, lat, proj = "lonlat", lon0 = NULL, lat0 = NULL) {
   px <- p$x
   py <- p$y
   n <- length(px)
-  if (n >= 2L) {
+  if (n >= 2L && any(!is.na(px)) && any(!is.na(py))) {
     dx <- abs(diff(px))
     dy <- abs(diff(py))
     span_x <- diff(range(px, na.rm = TRUE))
