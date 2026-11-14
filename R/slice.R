@@ -96,6 +96,7 @@ nc_slice <- function(x,
     su$var <- paste(var, collapse = ",")
     su$u_var <- var[1L]
     su$v_var <- var[2L]
+    su$uv_units <- su$units
     su$long_name <- sprintf("Vector (%s, %s)", var[1L], var[2L])
     su$is_vector <- TRUE
     su$has_uv    <- TRUE
@@ -118,6 +119,7 @@ nc_slice <- function(x,
     s$v <- sv$z
     s$u_var <- uv[1L]
     s$v_var <- uv[2L]
+    s$uv_units <- su$units
     s$has_uv <- TRUE
   }
   s$source <- list(nc = x, var = var[1L], uv = uv,

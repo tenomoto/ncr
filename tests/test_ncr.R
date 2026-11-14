@@ -94,6 +94,8 @@ drawvec(nc[c("u", "v"), lev = 500], skip = 2)
 plot(nc, "temp", proj = "orthographic", lon0 = 140, lat0 = 30, uv = c("u", "v"), skip = 2)
 plot(nc, "temp", proj = "robinson")
 plot(nc, "temp", proj = "npstere")
+plot(nc, "temp", proj = "npstere", lat = c(30, 90))
+plot(nc, "temp", proj = "spstere", lat = c(-90, -30))
 plot(nc, "temp", proj = "lambert", lon = c(100, 180), lat = c(15, 65))
 
 # Hovmoeller diagrams (time on Y and time on X)

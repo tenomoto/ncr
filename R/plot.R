@@ -23,6 +23,9 @@
 #' @param col Arrow color (default `"black"`).
 #' @param proj,lon0,lat0 Optional map projection settings when `x` is an
 #'   `"ncr_slice"` (defaults to `nc_get()`).
+#' @param ref_legend Logical; if `TRUE`, draws a reference vector arrow above
+#'   the `"Ref vector: ..."` label in the bottom-right margin.
+#' @param ref_units Optional character string for reference vector units.
 #' @param ... Additional graphical parameters passed to [graphics::arrows()].
 #' @return Invisibly returns the reference magnitude `uvref`.
 #' @examples
@@ -35,7 +38,8 @@
 #' @export
 drawvec <- function(x, y = NULL, u = NULL, v = NULL,
                     length = 0.05, uvref = NA, skip = 1L, col = "black",
-                    proj = NULL, lon0 = NULL, lat0 = NULL, ...) {
+                    proj = NULL, lon0 = NULL, lat0 = NULL,
+                    ref_legend = FALSE, ref_units = "", ...) {
   if (inherits(x, "ncr_slice")) {
     s <- x
     if (inherits(y, "ncr_slice")) {
@@ -62,7 +66,9 @@ drawvec <- function(x, y = NULL, u = NULL, v = NULL,
       return(.draw_projected_vectors(s$x, s$y, u_mat, v_mat, proj = proj_norm,
                                      lon0 = lon0, lat0 = lat0,
                                      skip = skip, uvref = uvref, length = length,
-                                     col = col, ...))
+                                     col = col, ref_legend = ref_legend,
+                                     ref_units = if (nzchar(ref_units)) ref_units else if (!is.null(s$uv_units)) s$uv_units else s$units,
+                                     ...))
     }
     x <- s$x
     y <- s$y
@@ -85,10 +91,10 @@ drawvec <- function(x, y = NULL, u = NULL, v = NULL,
   nx <- length(x)
   ny <- length(y)
   usr <- graphics::par("usr")
-  d <- min((usr[2L] - usr[1L]) / nx, (usr[4L] - usr[3L]) / ny)
+  d_grid <- min((usr[2L] - usr[1L]) / nx, (usr[4L] - usr[3L]) / ny)
   if (is.na(uvref)) uvref <- max(abs(c(u, v)), na.rm = TRUE)
   if (!is.finite(uvref) || uvref <= 0) return(invisible(uvref))
-  d <- d / uvref
+  d <- d_grid / uvref
   u <- 0.5 * as.vector(u) * d
   v <- 0.5 * as.vector(v) * d
   X <- rep(x, times = length(y))
@@ -103,7 +109,33 @@ drawvec <- function(x, y = NULL, u = NULL, v = NULL,
                      X[keep] + u[keep], Y[keep] + v[keep],
                      length = length, col = col, ...)
   }
+  if (isTRUE(ref_legend)) {
+    .draw_ref_vector(uvref, ref_len_usr = d_grid, length = length,
+                     units = ref_units, col = col)
+  }
   invisible(uvref)
+}
+
+.draw_ref_vector <- function(ref, ref_len_usr, length = 0.05, units = "", col = "black") {
+  if (!is.finite(ref) || ref <= 0 || !is.finite(ref_len_usr) || ref_len_usr <= 0) {
+    return(invisible(NULL))
+  }
+  usr <- graphics::par("usr")
+  pin <- graphics::par("pin")
+  line_y <- graphics::par("csi") * abs(usr[4L] - usr[3L]) / max(pin[2L], 1e-6)
+  y_arr <- usr[3L] - 2.3 * line_y
+  x_end <- usr[2L]
+  x_start <- x_end - ref_len_usr
+  graphics::arrows(x_start, y_arr, x_end, y_arr,
+                   length = length, col = col, xpd = NA)
+  u_str <- if (is.character(units) && length(units) == 1L && nzchar(units)) {
+    paste0(" ", units)
+  } else {
+    ""
+  }
+  graphics::mtext(sprintf("Ref vector: %s%s", signif(ref, 3), u_str),
+                  side = 1, line = 3.2, adj = 1, cex = 0.78, col = "gray25")
+  invisible(NULL)
 }
 
 #' Convert Between Pressure and Standard-Atmosphere Height
@@ -611,7 +643,7 @@ nc_xsection <- function(x,
 }
 
 .overlay_world_map <- function(xlim, ylim, proj = "lonlat", lon0 = NULL, lat0 = NULL,
-                               col = "gray25", lwd = 0.8) {
+                               lat_lim = NULL, col = "gray25", lwd = 0.8) {
   wrap <- if (max(xlim, na.rm = TRUE) > 180.5) c(0, 360) else c(-180, 180)
   if (proj == "lonlat") {
     tryCatch(
@@ -625,6 +657,11 @@ nc_xsection <- function(x,
       error = function(e) NULL
     )
     if (!is.null(m)) {
+      if (!is.null(lat_lim)) {
+        out <- !is.na(m$y) & (m$y < lat_lim[1L] | m$y > lat_lim[2L])
+        m$x[out] <- NA_real_
+        m$y[out] <- NA_real_
+      }
       pm <- .project_map_lines(m, proj = proj, lon0 = lon0, lat0 = lat0)
       graphics::lines(pm$x, pm$y, col = col, lwd = lwd)
     }
@@ -702,11 +739,9 @@ nc_xsection <- function(x,
   }
 
   if (isTRUE(x$has_uv) && !is.null(x$u) && !is.null(x$v)) {
-    ref <- drawvec(xv, yv, x$u, x$v, length = length, uvref = uvref, skip = skip)
-    if (is.finite(ref)) {
-      graphics::mtext(sprintf("Ref vector: %s %s", signif(ref, 3), x$units),
-                      side = 1, line = 3, adj = 1, cex = 0.78, col = "gray30")
-    }
+    uv_u <- if (!is.null(x$uv_units)) x$uv_units else x$units
+    drawvec(xv, yv, x$u, x$v, length = length, uvref = uvref, skip = skip,
+            ref_legend = TRUE, ref_units = uv_u)
   }
 
   if (x$x_dim$axis == "lon") {
@@ -760,8 +795,20 @@ nc_xsection <- function(x,
   PX <- matrix(pe$x, nrow = nx + 1L, ncol = ny + 1L)
   PY <- matrix(pe$y, nrow = nx + 1L, ncol = ny + 1L)
 
-  # Determine plot window bounds
-  if (pe$proj == "orthographic") {
+  is_polar <- (pe$proj == "stereographic") && (abs(lat0) >= 89)
+  lat_lim <- NULL
+  if (is_polar) {
+    lat_bound <- if (lat0 >= 89) {
+      max(min(lat, na.rm = TRUE), 0)
+    } else {
+      min(max(lat, na.rm = TRUE), 0)
+    }
+    lat_lim <- if (lat0 >= 89) c(lat_bound, 90) else c(-90, lat_bound)
+    phi_b <- lat_bound * pi / 180
+    r_bound <- 2 * cos(phi_b) / (1 + sin(abs(phi_b)))
+    xlim <- c(-1.12, 1.12) * r_bound
+    ylim <- c(-1.12, 1.12) * r_bound
+  } else if (pe$proj == "orthographic") {
     xlim <- c(-1.05, 1.05)
     ylim <- c(-1.05, 1.05)
   } else {
@@ -827,17 +874,19 @@ nc_xsection <- function(x,
     }
   }
 
-  .draw_graticule(pe$proj, lon0 = lon0, lat0 = lat0)
+  .draw_graticule(pe$proj, lon0 = lon0, lat0 = lat0, lat_lim = lat_lim)
 
   if (isTRUE(map)) {
-    .overlay_world_map( range(lon), range(lat), proj = pe$proj,
-                        lon0 = lon0, lat0 = lat0 )
+    .overlay_world_map(range(lon), range(lat), proj = pe$proj,
+                       lon0 = lon0, lat0 = lat0, lat_lim = lat_lim)
   }
 
   if (isTRUE(x$has_uv) && !is.null(x$u) && !is.null(x$v)) {
+    uv_u <- if (!is.null(x$uv_units)) x$uv_units else x$units
     .draw_projected_vectors(lon, lat, x$u, x$v, proj = pe$proj,
                             lon0 = lon0, lat0 = lat0,
-                            skip = skip, uvref = uvref, length = length)
+                            skip = skip, uvref = uvref, length = length,
+                            ref_legend = TRUE, ref_units = uv_u)
   }
 
   if (isTRUE(filled)) {
@@ -853,7 +902,8 @@ nc_xsection <- function(x,
 
 .draw_projected_vectors <- function(lon, lat, u, v, proj, lon0, lat0,
                                     skip = 1L, uvref = NA, length = 0.05,
-                                    col = "black", ...) {
+                                    col = "black", ref_legend = FALSE,
+                                    ref_units = "", ...) {
   skip <- max(1L, as.integer(skip)[1L])
   iy <- seq.int(1L, length(lat), by = skip)
   # Exclude exact poles where zonal tangent direction is singular
@@ -907,6 +957,10 @@ nc_xsection <- function(x,
     graphics::arrows(p0$x[keep] - ux_all[keep], p0$y[keep] - vy_all[keep],
                      p0$x[keep] + ux_all[keep], p0$y[keep] + vy_all[keep],
                      length = length, col = col, ...)
+  }
+  if (isTRUE(ref_legend)) {
+    .draw_ref_vector(uvref, ref_len_usr = 1.1 * cell_d, length = length,
+                     units = ref_units, col = col)
   }
   invisible(uvref)
 }

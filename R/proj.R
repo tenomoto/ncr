@@ -174,9 +174,60 @@ nc_project <- function(lon, lat, proj = "lonlat", lon0 = NULL, lat0 = NULL) {
   list(x = px, y = py)
 }
 
-.draw_graticule <- function(proj, lon0, lat0, col = "gray75", lty = 3) {
+.format_lon_deg <- function(lon) {
+  vapply(lon, function(v) {
+    v_norm <- ((v + 180) %% 360) - 180
+    if (abs(v_norm) < 1e-6 || abs(abs(v_norm) - 180) < 1e-6) {
+      paste0(round(abs(v_norm), 1), "\u00b0")
+    } else if (v_norm > 0) {
+      paste0(round(v_norm, 1), "\u00b0E")
+    } else {
+      paste0(round(abs(v_norm), 1), "\u00b0W")
+    }
+  }, character(1))
+}
+
+.draw_graticule <- function(proj, lon0, lat0, lat_lim = NULL, col = "gray75", lty = 3) {
   lons <- seq(-180, 150, by = 30)
   lats <- seq(-60, 60, by = 30)
+  is_polar <- (proj == "stereographic") && (abs(lat0) >= 89)
+
+  if (is_polar) {
+    lat_lo <- if (!is.null(lat_lim)) lat_lim[1L] else if (lat0 >= 89) 0 else -89.9
+    lat_hi <- if (!is.null(lat_lim)) lat_lim[2L] else if (lat0 >= 89) 89.9 else 0
+    lat_bound <- if (lat0 >= 89) lat_lo else lat_hi
+
+    lat_fine <- seq(max(lat_lo, -89.5), min(lat_hi, 89.5), length.out = 60)
+    for (ln in lons) {
+      p <- .project_map_lines(list(x = rep(ln, length(lat_fine)), y = lat_fine),
+                              proj = proj, lon0 = lon0, lat0 = lat0)
+      graphics::lines(p$x, p$y, col = col, lty = lty, lwd = 0.6)
+    }
+
+    lon_fine <- seq(lon0 - 179.5, lon0 + 179.5, length.out = 180)
+    lats_in <- lats[lats > lat_lo & lats < lat_hi]
+    for (lt in lats_in) {
+      p <- .project_map_lines(list(x = lon_fine, y = rep(lt, length(lon_fine))),
+                              proj = proj, lon0 = lon0, lat0 = lat0)
+      graphics::lines(p$x, p$y, col = col, lty = lty, lwd = 0.6)
+    }
+
+    # Outer bounding latitude circle and longitude labels along meridians
+    phi_b <- lat_bound * pi / 180
+    r_b <- 2 * cos(phi_b) / (1 + sin(abs(phi_b)))
+    ang <- seq(0, 2 * pi, length.out = 180)
+    graphics::lines(r_b * cos(ang), r_b * sin(ang), col = "gray40", lwd = 0.9)
+
+    pb <- nc_project(lons, rep(lat_bound, length(lons)),
+                     proj = proj, lon0 = lon0, lat0 = lat0)
+    ok <- !is.na(pb$x) & !is.na(pb$y)
+    if (any(ok)) {
+      graphics::text(pb$x[ok] * 1.07, pb$y[ok] * 1.07,
+                     labels = .format_lon_deg(lons[ok]),
+                     cex = 0.72, col = "gray30", xpd = NA)
+    }
+    return(invisible(NULL))
+  }
 
   lat_fine <- seq(-85, 85, length.out = 90)
   for (ln in lons) {

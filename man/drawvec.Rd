@@ -16,6 +16,8 @@ drawvec(
   proj = NULL,
   lon0 = NULL,
   lat0 = NULL,
+  ref_legend = FALSE,
+  ref_units = "",
   ...
 )
 }
@@ -44,6 +46,11 @@ plots every second point along `x` and `y`).}
 
 \item{proj, lon0, lat0}{Optional map projection settings when `x` is an
 `"ncr_slice"` (defaults to `nc_get()`).}
+
+\item{ref_legend}{Logical; if `TRUE`, draws a reference vector arrow above
+the `"Ref vector: ..."` label in the bottom-right margin.}
+
+\item{ref_units}{Optional character string for reference vector units.}
 
 \item{...}{Additional graphical parameters passed to [graphics::arrows()].}
 }
