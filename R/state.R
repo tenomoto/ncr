@@ -9,6 +9,7 @@
   .ncr_state$proj <- "lonlat"
   .ncr_state$lon0 <- NULL
   .ncr_state$lat0 <- NULL
+  .ncr_state$map  <- TRUE
 }
 
 .init_ncr_state()
@@ -34,6 +35,9 @@
 #'   `"mercator"`, `"robinson"`, `"mollweide"`, `"orthographic"`,
 #'   `"stereographic"`, `"npstere"`, `"spstere"`, `"lambert"`).
 #' @param lon0,lat0 Optional projection center longitude and latitude.
+#' @param map Default map overlay (`TRUE` for `"world"`, `FALSE` for none,
+#'   `"hires"` / `"worldHires"` / `"japan"` via `mapdata`, or a custom
+#'   `list(x, y)`).
 #' @return A named list of the current global state settings (`nc_set` and
 #'   `nc_reset` return the updated state invisibly; `nc_get` returns it
 #'   visibly).
@@ -48,7 +52,8 @@ nc_set <- function(lon = missing_arg(),
                    time = missing_arg(),
                    proj = missing_arg(),
                    lon0 = missing_arg(),
-                   lat0 = missing_arg()) {
+                   lat0 = missing_arg(),
+                   map = missing_arg()) {
   if (!is_missing_arg(lon))  .ncr_state$lon  <- lon
   if (!is_missing_arg(lat))  .ncr_state$lat  <- lat
   if (!is_missing_arg(lev))  .ncr_state$lev  <- lev
@@ -56,6 +61,7 @@ nc_set <- function(lon = missing_arg(),
   if (!is_missing_arg(proj)) .ncr_state$proj <- proj
   if (!is_missing_arg(lon0)) .ncr_state$lon0 <- lon0
   if (!is_missing_arg(lat0)) .ncr_state$lat0 <- lat0
+  if (!is_missing_arg(map))  .ncr_state$map  <- map
   invisible(nc_get())
 }
 
@@ -69,7 +75,8 @@ nc_get <- function() {
     time = .ncr_state$time,
     proj = .ncr_state$proj,
     lon0 = .ncr_state$lon0,
-    lat0 = .ncr_state$lat0
+    lat0 = .ncr_state$lat0,
+    map  = .ncr_state$map
   )
 }
 

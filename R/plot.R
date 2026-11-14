@@ -188,9 +188,10 @@ alt2pres <- function(z, p0 = 1013.25, H = 7.2) {
 #' @param filled Logical; if `TRUE` (default for scalar `plot()`), draws filled
 #'   contours with a colorbar via [fields::image.plot()].
 #' @param contour Logical; if `TRUE`, draws contour lines over filled contours.
-#' @param map Map overlay specification for `lon`-`lat` slices:
-#'   * `TRUE` (default): draws coarse world coastlines via `maps::map("world")`.
-#'   * `FALSE` or `NULL`: no map overlay.
+#' @param map Map overlay specification for `lon`-`lat` slices (defaults to
+#'   `nc_get()$map` when `NULL`):
+#'   * `TRUE`: draws coarse world coastlines via `maps::map("world")`.
+#'   * `FALSE`: no map overlay.
 #'   * `"hires"` or `"worldHires"`: high-resolution world coastlines via the
 #'     suggested `mapdata` package.
 #'   * `"japan"`, `"china"`, `"rivers"`, or any other `maps`/`mapdata` database
@@ -248,7 +249,7 @@ plot.ncr <- function(x,
                      uv = NULL,
                      filled = NULL,
                      contour = TRUE,
-                     map = TRUE,
+                     map = NULL,
                      proj = NULL,
                      lon0 = NULL,
                      lat0 = NULL,
@@ -329,7 +330,7 @@ plot.ncr_slice <- function(x,
                            uv = NULL,
                            filled = NULL,
                            contour = TRUE,
-                           map = TRUE,
+                           map = NULL,
                            proj = NULL,
                            lon0 = NULL,
                            lat0 = NULL,
@@ -354,6 +355,9 @@ plot.ncr_slice <- function(x,
   }
   if (is.null(filled)) {
     filled <- !isTRUE(x$is_vector)
+  }
+  if (is.null(map)) {
+    map <- nc_get()$map
   }
   if (is.null(proj)) {
     proj <- nc_get()$proj
@@ -421,7 +425,7 @@ contour.ncr_slice <- function(x,
                               time = missing_arg(),
                               filled = FALSE,
                               contour = !filled,
-                              map = TRUE,
+                              map = NULL,
                               proj = NULL,
                               lon0 = NULL,
                               lat0 = NULL,
@@ -670,41 +674,51 @@ nc_xsection <- function(x,
     return(invisible(NULL))
   }
 
-  db <- if (isTRUE(map)) "world" else as.character(map)[1L]
-  if (tolower(db) %in% c("hires", "high", "worldhires")) db <- "worldHires"
-
-  mapdata_dbs <- c("worldHires", "world2Hires", "japan", "china", "rivers")
-  is_mapdata <- (db %in% mapdata_dbs) || startsWith(db, "mapdata::")
-  if (is_mapdata) {
-    if (!requireNamespace("mapdata", quietly = TRUE)) {
-      stop(sprintf("Package 'mapdata' is required for map = '%s'. Install it with install.packages('mapdata').", db),
-           call. = FALSE)
-    }
-    if (!startsWith(db, "mapdata::")) db <- paste0("mapdata::", db)
+  dbs <- if (isTRUE(map)) "world" else as.character(map)
+  if (length(dbs) == 1L && tolower(dbs[1L]) == "japan") {
+    # mapdata::japan only contains Japan; layer worldHires so Korea and neighbors remain visible
+    dbs <- c("worldHires", "japan")
   }
 
-  show_interior <- endsWith(db, "japan") || endsWith(db, "state") || endsWith(db, "county")
+  mapdata_dbs <- c("worldHires", "world2Hires", "japan", "china", "rivers")
   wrap <- if (max(xlim, na.rm = TRUE) > 180.5) c(0, 360) else c(-180, 180)
 
-  if (proj == "lonlat") {
-    tryCatch(
-      maps::map(db, xlim = xlim, ylim = ylim, wrap = wrap, add = TRUE,
-                col = col, lwd = lwd, interior = show_interior),
-      error = function(e) NULL
-    )
-  } else {
-    m <- tryCatch(
-      maps::map(db, plot = FALSE, fill = FALSE, interior = show_interior),
-      error = function(e) NULL
-    )
-    if (!is.null(m)) {
-      if (!is.null(lat_lim)) {
-        out <- !is.na(m$y) & (m$y < lat_lim[1L] | m$y > lat_lim[2L])
-        m$x[out] <- NA_real_
-        m$y[out] <- NA_real_
+  for (db in dbs) {
+    if (tolower(db) %in% c("hires", "high", "worldhires")) db <- "worldHires"
+    is_mapdata <- (db %in% mapdata_dbs) || startsWith(db, "mapdata::")
+    if (is_mapdata) {
+      if (!requireNamespace("mapdata", quietly = TRUE)) {
+        stop(sprintf("Package 'mapdata' is required for map = '%s'. Install it with install.packages('mapdata').", db),
+             call. = FALSE)
       }
-      pm <- .project_map_lines(m, proj = proj, lon0 = lon0, lat0 = lat0)
-      graphics::lines(pm$x, pm$y, col = col, lwd = lwd)
+      if (!startsWith(db, "mapdata::")) db <- paste0("mapdata::", db)
+    }
+
+    show_interior <- endsWith(db, "japan") || endsWith(db, "state") || endsWith(db, "county")
+    is_sub_border <- endsWith(db, "japan") && length(dbs) > 1L
+    col_i <- if (is_sub_border) "gray45" else col
+    lwd_i <- if (is_sub_border) lwd * 0.65 else lwd
+
+    if (proj == "lonlat") {
+      tryCatch(
+        maps::map(db, xlim = xlim, ylim = ylim, wrap = wrap, add = TRUE,
+                  col = col_i, lwd = lwd_i, interior = show_interior),
+        error = function(e) NULL
+      )
+    } else {
+      m <- tryCatch(
+        maps::map(db, plot = FALSE, fill = FALSE, interior = show_interior),
+        error = function(e) NULL
+      )
+      if (!is.null(m)) {
+        if (!is.null(lat_lim)) {
+          out <- !is.na(m$y) & (m$y < lat_lim[1L] | m$y > lat_lim[2L])
+          m$x[out] <- NA_real_
+          m$y[out] <- NA_real_
+        }
+        pm <- .project_map_lines(m, proj = proj, lon0 = lon0, lat0 = lat0)
+        graphics::lines(pm$x, pm$y, col = col_i, lwd = lwd_i)
+      }
     }
   }
 }

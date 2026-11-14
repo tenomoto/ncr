@@ -15,7 +15,7 @@
   uv = NULL,
   filled = NULL,
   contour = TRUE,
-  map = TRUE,
+  map = NULL,
   proj = NULL,
   lon0 = NULL,
   lat0 = NULL,
@@ -44,7 +44,7 @@
   uv = NULL,
   filled = NULL,
   contour = TRUE,
-  map = TRUE,
+  map = NULL,
   proj = NULL,
   lon0 = NULL,
   lat0 = NULL,
@@ -83,7 +83,7 @@
   time = missing_arg(),
   filled = FALSE,
   contour = !filled,
-  map = TRUE,
+  map = NULL,
   proj = NULL,
   lon0 = NULL,
   lat0 = NULL,
@@ -129,9 +129,10 @@ contours with a colorbar via [fields::image.plot()].}
 
 \item{contour}{Logical; if `TRUE`, draws contour lines over filled contours.}
 
-\item{map}{Map overlay specification for `lon`-`lat` slices:
-* `TRUE` (default): draws coarse world coastlines via `maps::map("world")`.
-* `FALSE` or `NULL`: no map overlay.
+\item{map}{Map overlay specification for `lon`-`lat` slices (defaults to
+`nc_get()$map` when `NULL`):
+* `TRUE`: draws coarse world coastlines via `maps::map("world")`.
+* `FALSE`: no map overlay.
 * `"hires"` or `"worldHires"`: high-resolution world coastlines via the
   suggested `mapdata` package.
 * `"japan"`, `"china"`, `"rivers"`, or any other `maps`/`mapdata` database

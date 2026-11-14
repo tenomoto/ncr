@@ -107,12 +107,14 @@ print.ncr <- function(x, ...) {
     }
   }
   st <- nc_get()
-  cat(sprintf("  State:      lon=%s, lat=%s, lev=%s, time=%s, proj=%s\n",
+  map_str <- if (is.list(st$map)) "<custom>" else paste(as.character(st$map), collapse = "+")
+  cat(sprintf("  State:      lon=%s, lat=%s, lev=%s, time=%s, proj=%s, map=%s\n",
               .fmt_state_val(st$lon),
               .fmt_state_val(st$lat),
               .fmt_state_val(st$lev),
               .fmt_state_val(st$time),
-              as.character(st$proj)))
+              as.character(st$proj),
+              map_str))
   invisible(x)
 }
 

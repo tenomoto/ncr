@@ -18,6 +18,12 @@ nc_reset()
 st <- nc_get()
 stopifnot(identical(st$time, 1L))
 stopifnot(identical(st$proj, "lonlat"))
+stopifnot(identical(st$map, TRUE))
+
+nc_set(map = FALSE)
+stopifnot(identical(nc_get()$map, FALSE))
+nc_reset()
+stopifnot(identical(nc_get()$map, TRUE))
 
 # 3. Slicing syntax: $, [, nc_slice
 s1 <- nc$temp

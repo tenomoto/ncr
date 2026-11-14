@@ -13,7 +13,8 @@ nc_set(
   time = missing_arg(),
   proj = missing_arg(),
   lon0 = missing_arg(),
-  lat0 = missing_arg()
+  lat0 = missing_arg(),
+  map = missing_arg()
 )
 
 nc_get()
@@ -41,6 +42,10 @@ range (e.g., `"2020-01-01"` or `c("2020-01-01", "2020-01-10")`), `POSIXt`
 `"stereographic"`, `"npstere"`, `"spstere"`, `"lambert"`).}
 
 \item{lon0, lat0}{Optional projection center longitude and latitude.}
+
+\item{map}{Default map overlay (`TRUE` for `"world"`, `FALSE` for none,
+`"hires"` / `"worldHires"` / `"japan"` via `mapdata`, or a custom
+`list(x, y)`).}
 }
 \value{
 A named list of the current global state settings (`nc_set` and
