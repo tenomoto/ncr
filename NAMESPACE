@@ -71,6 +71,7 @@ importFrom(graphics,
   points,
   polygon,
   rect,
+  strwidth,
   text,
   title
 )

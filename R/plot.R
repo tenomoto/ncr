@@ -188,8 +188,14 @@ alt2pres <- function(z, p0 = 1013.25, H = 7.2) {
 #' @param filled Logical; if `TRUE` (default for scalar `plot()`), draws filled
 #'   contours with a colorbar via [fields::image.plot()].
 #' @param contour Logical; if `TRUE`, draws contour lines over filled contours.
-#' @param map Logical; if `TRUE` (default for `lon`-`lat` slices), overlays
-#'   world coastlines from `maps::map()`.
+#' @param map Map overlay specification for `lon`-`lat` slices:
+#'   * `TRUE` (default): draws coarse world coastlines via `maps::map("world")`.
+#'   * `FALSE` or `NULL`: no map overlay.
+#'   * `"hires"` or `"worldHires"`: high-resolution world coastlines via the
+#'     suggested `mapdata` package.
+#'   * `"japan"`, `"china"`, `"rivers"`, or any other `maps`/`mapdata` database
+#'     name (e.g., `"world2"`, `"usa"`, `"state"`).
+#'   * A custom `list(x, y)` of coastline coordinates (in degrees).
 #' @param proj Character string specifying map projection (e.g., `"lonlat"`,
 #'   `"orthographic"`, `"stereographic"`, `"npstere"`, `"spstere"`,
 #'   `"robinson"`, `"mollweide"`, `"mercator"`, `"lambert"`). Defaults to the
@@ -433,7 +439,7 @@ contour.ncr_slice <- function(x,
     x,
     filled  = filled,
     contour = if (filled) contour else TRUE,
-    map     = map && !add,
+    map     = if (isTRUE(add)) FALSE else map,
     proj    = proj,
     lon0    = lon0,
     lat0    = lat0,
@@ -642,18 +648,53 @@ nc_xsection <- function(x,
   graphics::axis(side, at = at, labels = labs)
 }
 
-.overlay_world_map <- function(xlim, ylim, proj = "lonlat", lon0 = NULL, lat0 = NULL,
-                               lat_lim = NULL, col = "gray25", lwd = 0.8) {
+.overlay_world_map <- function(xlim, ylim, map = TRUE, proj = "lonlat",
+                               lon0 = NULL, lat0 = NULL, lat_lim = NULL,
+                               col = "gray25", lwd = 0.8) {
+  if (is.null(map) || isFALSE(map)) return(invisible(NULL))
+
+  # Custom list(x, y) polyline
+  if (is.list(map) && !is.null(map$x) && !is.null(map$y)) {
+    m <- list(x = map$x, y = map$y)
+    if (proj == "lonlat") {
+      graphics::lines(m$x, m$y, col = col, lwd = lwd)
+    } else {
+      if (!is.null(lat_lim)) {
+        out <- !is.na(m$y) & (m$y < lat_lim[1L] | m$y > lat_lim[2L])
+        m$x[out] <- NA_real_
+        m$y[out] <- NA_real_
+      }
+      pm <- .project_map_lines(m, proj = proj, lon0 = lon0, lat0 = lat0)
+      graphics::lines(pm$x, pm$y, col = col, lwd = lwd)
+    }
+    return(invisible(NULL))
+  }
+
+  db <- if (isTRUE(map)) "world" else as.character(map)[1L]
+  if (tolower(db) %in% c("hires", "high", "worldhires")) db <- "worldHires"
+
+  mapdata_dbs <- c("worldHires", "world2Hires", "japan", "china", "rivers")
+  is_mapdata <- (db %in% mapdata_dbs) || startsWith(db, "mapdata::")
+  if (is_mapdata) {
+    if (!requireNamespace("mapdata", quietly = TRUE)) {
+      stop(sprintf("Package 'mapdata' is required for map = '%s'. Install it with install.packages('mapdata').", db),
+           call. = FALSE)
+    }
+    if (!startsWith(db, "mapdata::")) db <- paste0("mapdata::", db)
+  }
+
+  show_interior <- endsWith(db, "japan") || endsWith(db, "state") || endsWith(db, "county")
   wrap <- if (max(xlim, na.rm = TRUE) > 180.5) c(0, 360) else c(-180, 180)
+
   if (proj == "lonlat") {
     tryCatch(
-      maps::map("world", wrap = wrap, add = TRUE, col = col, lwd = lwd,
-                 interior = FALSE),
+      maps::map(db, xlim = xlim, ylim = ylim, wrap = wrap, add = TRUE,
+                col = col, lwd = lwd, interior = show_interior),
       error = function(e) NULL
     )
   } else {
     m <- tryCatch(
-      maps::map("world", plot = FALSE, fill = FALSE),
+      maps::map(db, plot = FALSE, fill = FALSE, interior = show_interior),
       error = function(e) NULL
     )
     if (!is.null(m)) {
@@ -734,8 +775,8 @@ nc_xsection <- function(x,
     }
   }
 
-  if (isTRUE(map) && x$plot_type == "lonlat") {
-    .overlay_world_map(xlim, ylim, proj = "lonlat")
+  if (!isFALSE(map) && !is.null(map) && x$plot_type == "lonlat") {
+    .overlay_world_map(xlim, ylim, map = map, proj = "lonlat")
   }
 
   if (isTRUE(x$has_uv) && !is.null(x$u) && !is.null(x$v)) {
@@ -876,8 +917,8 @@ nc_xsection <- function(x,
 
   .draw_graticule(pe$proj, lon0 = lon0, lat0 = lat0, lat_lim = lat_lim)
 
-  if (isTRUE(map)) {
-    .overlay_world_map(range(lon), range(lat), proj = pe$proj,
+  if (!isFALSE(map) && !is.null(map)) {
+    .overlay_world_map(range(lon), range(lat), map = map, proj = pe$proj,
                        lon0 = lon0, lat0 = lat0, lat_lim = lat_lim)
   }
 
@@ -993,17 +1034,42 @@ nc_xsection <- function(x,
   if (is.null(main)) main <- paste("Hovmoeller:", .default_title(x))
 
   old_mar <- graphics::par("mar")
+  mar_new <- old_mar
+  need_mar <- FALSE
   if (isTRUE(filled)) {
-    on.exit(graphics::par(mar = old_mar), add = TRUE)
-    mar_new <- old_mar
     mar_new[4L] <- max(mar_new[4L], 5.5)
+    need_mar <- TRUE
+  }
+  ylab_plot <- ylab
+  ylab_line <- NA_real_
+  if (time_on_y && !is.null(t_dim$time_posix)) {
+    t_info <- .time_axis_info(t_dim$time_posix)
+    w_lines <- if (grDevices::dev.cur() > 1L) {
+      max(graphics::strwidth(t_info$labels, units = "inches"), na.rm = TRUE) /
+        max(graphics::par("csi"), 1e-3)
+    } else {
+      max(nchar(t_info$labels), 4L) * 0.48
+    }
+    left_needed <- max(mar_new[2L], ceiling(w_lines) + 2.4)
+    if (left_needed > mar_new[2L]) {
+      mar_new[2L] <- left_needed
+      need_mar <- TRUE
+    }
+    ylab_line <- mar_new[2L] - 1.3
+    ylab_plot <- ""
+  }
+  if (need_mar) {
+    on.exit(graphics::par(mar = old_mar), add = TRUE)
     graphics::par(mar = mar_new)
   }
 
   xlim <- range(xv, na.rm = TRUE)
   ylim <- range(yv, na.rm = TRUE)
-  graphics::plot(NA, xlim = xlim, ylim = ylim, xlab = xlab, ylab = ylab,
+  graphics::plot(NA, xlim = xlim, ylim = ylim, xlab = xlab, ylab = ylab_plot,
                  main = main, sub = sub, xaxs = "i", yaxs = "i", axes = FALSE, ...)
+  if (!is.na(ylab_line) && nzchar(ylab)) {
+    graphics::mtext(ylab, side = 2, line = ylab_line)
+  }
 
   if (isTRUE(filled)) {
     graphics::.filled.contour(xv, yv, z, levels = lc$levels, col = lc$cols)
@@ -1051,7 +1117,7 @@ nc_xsection <- function(x,
   }
 }
 
-.draw_nice_time_axis <- function(side, t_posix) {
+.time_axis_info <- function(t_posix) {
   span_sec <- diff(range(as.numeric(t_posix), na.rm = TRUE))
   fmt <- if (span_sec <= 3 * 86400) {
     "%b %d %H:%M"
@@ -1063,7 +1129,13 @@ nc_xsection <- function(x,
     "%Y"
   }
   at_t <- pretty(t_posix, n = 6)
-  graphics::axis.POSIXct(side, at = at_t, format = fmt, las = if (side == 2) 1 else 0)
+  list(at = at_t, fmt = fmt, labels = format(at_t, fmt))
+}
+
+.draw_nice_time_axis <- function(side, t_posix) {
+  info <- .time_axis_info(t_posix)
+  graphics::axis.POSIXct(side, at = info$at, format = info$fmt,
+                         las = if (side == 2) 1 else 0)
 }
 
 .is_pressure_dim <- function(d) {

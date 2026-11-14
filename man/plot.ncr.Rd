@@ -129,8 +129,14 @@ contours with a colorbar via [fields::image.plot()].}
 
 \item{contour}{Logical; if `TRUE`, draws contour lines over filled contours.}
 
-\item{map}{Logical; if `TRUE` (default for `lon`-`lat` slices), overlays
-world coastlines from `maps::map()`.}
+\item{map}{Map overlay specification for `lon`-`lat` slices:
+* `TRUE` (default): draws coarse world coastlines via `maps::map("world")`.
+* `FALSE` or `NULL`: no map overlay.
+* `"hires"` or `"worldHires"`: high-resolution world coastlines via the
+  suggested `mapdata` package.
+* `"japan"`, `"china"`, `"rivers"`, or any other `maps`/`mapdata` database
+  name (e.g., `"world2"`, `"usa"`, `"state"`).
+* A custom `list(x, y)` of coastline coordinates (in degrees).}
 
 \item{proj}{Character string specifying map projection (e.g., `"lonlat"`,
 `"orthographic"`, `"stereographic"`, `"npstere"`, `"spstere"`,

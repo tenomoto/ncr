@@ -78,6 +78,8 @@ grDevices::pdf(pdf_file, width = 8, height = 5)
 
 # 2D filled & line contour maps
 plot(nc, "temp")
+plot(nc, "temp", map = FALSE)
+plot(nc, "temp", map = list(x = c(130, 145, 145, 130), y = c(30, 30, 45, 45)))
 contour(nc, "temp", lev = 500, filled = FALSE)
 contour(nc$temp, lev = 500, filled = FALSE)
 contour(nc$temp, filled = TRUE)
