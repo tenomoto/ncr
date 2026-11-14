@@ -676,9 +676,10 @@ nc_xsection <- function(x,
 
   dbs <- if (isTRUE(map)) "world" else as.character(map)
   if (length(dbs) == 1L && tolower(dbs[1L]) == "japan") {
-    # mapdata::japan only contains Japan; layer worldHires so Korea and neighbors remain visible
+    # mapdata::japan only contains Japan; layer worldHires (excluding Japan) for neighbors
     dbs <- c("worldHires", "japan")
   }
+  has_japan_db <- any(tolower(dbs) %in% c("japan", "mapdata::japan"))
 
   mapdata_dbs <- c("worldHires", "world2Hires", "japan", "china", "rivers")
   wrap <- if (max(xlim, na.rm = TRUE) > 180.5) c(0, 360) else c(-180, 180)
@@ -695,19 +696,38 @@ nc_xsection <- function(x,
     }
 
     show_interior <- endsWith(db, "japan") || endsWith(db, "state") || endsWith(db, "county")
+    is_world_db <- grepl("(world|worldHires|world2|world2Hires)$", db, ignore.case = TRUE)
+    regions_arg <- "."
+    exact_arg <- FALSE
+    if (has_japan_db && is_world_db) {
+      regs <- tryCatch({
+        if (proj == "lonlat" && max(xlim, na.rm = TRUE) <= 180.5) {
+          maps::map(db, xlim = xlim, ylim = ylim, namesonly = TRUE, plot = FALSE)
+        } else {
+          maps::map(db, namesonly = TRUE, plot = FALSE)
+        }
+      }, error = function(e) character(0))
+      regs <- regs[!grepl("^Japan($|:)", regs, ignore.case = TRUE)]
+      if (length(regs) == 0L) next
+      regions_arg <- regs
+      exact_arg <- TRUE
+    }
+
     is_sub_border <- endsWith(db, "japan") && length(dbs) > 1L
-    col_i <- if (is_sub_border) "gray45" else col
-    lwd_i <- if (is_sub_border) lwd * 0.65 else lwd
+    col_i <- col
+    lwd_i <- if (is_sub_border) lwd * 0.75 else lwd
 
     if (proj == "lonlat") {
       tryCatch(
-        maps::map(db, xlim = xlim, ylim = ylim, wrap = wrap, add = TRUE,
+        maps::map(db, regions = regions_arg, exact = exact_arg,
+                  xlim = xlim, ylim = ylim, wrap = wrap, add = TRUE,
                   col = col_i, lwd = lwd_i, interior = show_interior),
         error = function(e) NULL
       )
     } else {
       m <- tryCatch(
-        maps::map(db, plot = FALSE, fill = FALSE, interior = show_interior),
+        maps::map(db, regions = regions_arg, exact = exact_arg,
+                  plot = FALSE, fill = FALSE, interior = show_interior),
         error = function(e) NULL
       )
       if (!is.null(m)) {
@@ -872,12 +892,17 @@ nc_xsection <- function(x,
   }
 
   old_mar <- graphics::par("mar")
-  if (isTRUE(filled)) {
-    on.exit(graphics::par(mar = old_mar), add = TRUE)
-    mar_new <- old_mar
-    mar_new[4L] <- max(mar_new[4L], 5.5)
-    graphics::par(mar = mar_new)
-  }
+  on.exit(graphics::par(mar = old_mar), add = TRUE)
+  has_sub <- !is.null(sub) && nzchar(sub)
+  mar_bot <- if (isTRUE(x$has_uv) || has_sub) 3.8 else 1.4
+  mar_top <- if (grepl("\n", main)) 3.6 else 2.8
+  mar_new <- c(
+    mar_bot,
+    1.4,
+    mar_top,
+    if (isTRUE(filled)) 5.2 else 1.4
+  )
+  graphics::par(mar = mar_new)
 
   graphics::plot(NA, xlim = xlim, ylim = ylim, asp = 1,
                  xlab = "", ylab = "", main = main, sub = sub, axes = FALSE, ...)
@@ -945,13 +970,31 @@ nc_xsection <- function(x,
   }
 
   if (isTRUE(filled)) {
-    fields::image.plot(
-      legend.only = TRUE,
-      zlim        = range(lc$levels),
-      breaks      = lc$levels,
-      col         = lc$cols,
-      legend.mar  = 4.2
+    y_nfc <- graphics::grconvertY(ylim, from = "user", to = "nfc")
+    plt   <- graphics::par("plt")
+    sp <- c(
+      min(plt[2L] + 0.02, 0.90),
+      min(plt[2L] + 0.055, 0.94),
+      max(y_nfc[1L], 0.02),
+      min(y_nfc[2L], 0.98)
     )
+    if (sp[4L] > sp[3L] + 0.05 && sp[2L] > sp[1L] + 0.01) {
+      fields::image.plot(
+        legend.only = TRUE,
+        zlim        = range(lc$levels),
+        breaks      = lc$levels,
+        col         = lc$cols,
+        smallplot   = sp
+      )
+    } else {
+      fields::image.plot(
+        legend.only = TRUE,
+        zlim        = range(lc$levels),
+        breaks      = lc$levels,
+        col         = lc$cols,
+        legend.mar  = 4.2
+      )
+    }
   }
 }
 

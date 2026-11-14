@@ -7,8 +7,8 @@
 #' @importFrom fields image.plot
 #' @importFrom grDevices adjustcolor contourLines hcl.colors hcl.pals
 #' @importFrom graphics .filled.contour abline arrows axis axis.POSIXct box
-#'   contour grid lines mtext par plot plot.new plot.window points polygon rect
-#'   strwidth text title
+#'   contour grconvertY grid lines mtext par plot plot.new plot.window points
+#'   polygon rect strwidth text title
 #' @importFrom maps map
 #' @importFrom stats approx median na.omit
 #' @importFrom utils head tail
