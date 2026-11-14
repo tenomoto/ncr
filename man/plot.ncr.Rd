@@ -37,6 +37,10 @@
 \method{plot}{ncr_slice}(
   x,
   ...,
+  lon = missing_arg(),
+  lat = missing_arg(),
+  lev = missing_arg(),
+  time = missing_arg(),
   uv = NULL,
   filled = NULL,
   contour = TRUE,
@@ -73,6 +77,10 @@
 
 \method{contour}{ncr_slice}(
   x,
+  lon = missing_arg(),
+  lat = missing_arg(),
+  lev = missing_arg(),
+  time = missing_arg(),
   filled = FALSE,
   contour = !filled,
   map = TRUE,
@@ -84,6 +92,7 @@
   col = NULL,
   add = FALSE,
   main = NULL,
+  sub = NULL,
   xlab = NULL,
   ylab = NULL,
   ...

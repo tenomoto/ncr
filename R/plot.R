@@ -259,10 +259,35 @@ plot.ncr <- function(x,
   )
 }
 
+.reslice_if_needed <- function(x, lon, lat, lev, time) {
+  has_override <- !is_missing_arg(lon) || !is_missing_arg(lat) ||
+    !is_missing_arg(lev) || !is_missing_arg(time)
+  if (!has_override) return(x)
+
+  if (is.null(x$source) || isTRUE(x$source$nc$env$closed)) {
+    stop("Cannot re-slice this 'ncr_slice' object (dataset is closed or slice is a derived expression).",
+         call. = FALSE)
+  }
+  src <- x$source
+  nc_slice(
+    src$nc,
+    var  = src$var,
+    lon  = if (is_missing_arg(lon))  src$lon  else lon,
+    lat  = if (is_missing_arg(lat))  src$lat  else lat,
+    lev  = if (is_missing_arg(lev))  src$lev  else lev,
+    time = if (is_missing_arg(time)) src$time else time,
+    uv   = src$uv
+  )
+}
+
 #' @rdname plot.ncr
 #' @export
 plot.ncr_slice <- function(x,
                            ...,
+                           lon = missing_arg(),
+                           lat = missing_arg(),
+                           lev = missing_arg(),
+                           time = missing_arg(),
                            uv = NULL,
                            filled = NULL,
                            contour = TRUE,
@@ -283,6 +308,7 @@ plot.ncr_slice <- function(x,
                            sub = NULL,
                            xlab = NULL,
                            ylab = NULL) {
+  x <- .reslice_if_needed(x, lon = lon, lat = lat, lev = lev, time = time)
   if (inherits(uv, "ncr_slice")) {
     x$u <- if (!is.null(uv$u)) uv$u else uv$z
     x$v <- uv$v
@@ -351,6 +377,10 @@ contour.ncr <- function(x, var = NULL,
 #' @rdname plot.ncr
 #' @export
 contour.ncr_slice <- function(x,
+                              lon = missing_arg(),
+                              lat = missing_arg(),
+                              lev = missing_arg(),
+                              time = missing_arg(),
                               filled = FALSE,
                               contour = !filled,
                               map = TRUE,
@@ -362,9 +392,11 @@ contour.ncr_slice <- function(x,
                               col = NULL,
                               add = FALSE,
                               main = NULL,
+                              sub = NULL,
                               xlab = NULL,
                               ylab = NULL,
                               ...) {
+  x <- .reslice_if_needed(x, lon = lon, lat = lat, lev = lev, time = time)
   plot.ncr_slice(
     x,
     filled  = filled,
@@ -378,6 +410,7 @@ contour.ncr_slice <- function(x,
     col     = col,
     add     = add,
     main    = main,
+    sub     = sub,
     xlab    = xlab,
     ylab    = ylab,
     ...

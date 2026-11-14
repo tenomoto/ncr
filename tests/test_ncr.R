@@ -78,7 +78,8 @@ grDevices::pdf(pdf_file, width = 8, height = 5)
 
 # 2D filled & line contour maps
 plot(nc, "temp")
-contour(nc, "slp", filled = FALSE)
+contour(nc, "temp", lev = 500, filled = FALSE)
+contour(nc$temp, lev = 500, filled = FALSE)
 contour(nc$temp, filled = TRUE)
 
 # Vectors and scalar + vector overlay

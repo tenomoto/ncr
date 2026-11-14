@@ -99,6 +99,8 @@ nc_slice <- function(x,
     su$long_name <- sprintf("Vector (%s, %s)", var[1L], var[2L])
     su$is_vector <- TRUE
     su$has_uv    <- TRUE
+    su$source    <- list(nc = x, var = var, uv = NULL,
+                         lon = lon, lat = lat, lev = lev, time = time)
     return(su)
   }
 
@@ -118,6 +120,8 @@ nc_slice <- function(x,
     s$v_var <- uv[2L]
     s$has_uv <- TRUE
   }
+  s$source <- list(nc = x, var = var[1L], uv = uv,
+                   lon = lon, lat = lat, lev = lev, time = time)
   s
 }
 
@@ -234,6 +238,7 @@ Ops.ncr_slice <- function(e1, e2) {
   res$has_uv <- FALSE
   res$u <- NULL
   res$v <- NULL
+  res$source <- NULL
   res
 }
 
@@ -249,6 +254,7 @@ Math.ncr_slice <- function(x, ...) {
   res$has_uv <- FALSE
   res$u <- NULL
   res$v <- NULL
+  res$source <- NULL
   res
 }
 
