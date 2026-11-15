@@ -95,8 +95,18 @@ plot(nc, c("u", "v"), lev = 850, skip = 2)
 plot(nc, "temp", uv = c("u", "v"), lev = 850, skip = 2)
 plot(nc$slp, contour = TRUE)
 points(nc[c("u", "v"), lev = 1000], skip = 2)
-drawvec(nc["u", lev = 850], nc["v", lev = 850], skip = 2, col = "navy")
-drawvec(nc[c("u", "v"), lev = 500], skip = 2)
+drawvec(nc$lon, nc$lat, nc["u", lev = 850]$z, nc["v", lev = 850]$z, skip = 2, col = "navy")
+nc_vector(nc["u", lev = 850], nc["v", lev = 850], skip = 2, col = "navy", add = TRUE)
+nc_vector(nc[c("u", "v"), lev = 500], skip = 2, add = TRUE)
+nc_vector(nc, c("u", "v"), lev = 500, skip = 2)
+nc_vector(nc$u, nc$v, lev = 500, skip = 2)
+
+# Coordinate variable access and arithmetic + re-slicing
+stopifnot(is.numeric(nc$lon), is.numeric(nc$lat), is.numeric(nc$lev), inherits(nc$time, "POSIXct"))
+t_c <- plot(nc$temp - 273.15, lev = 850)
+stopifnot(abs(t_c$fixed_coords$lev - 850) < 1e-6)
+spd_500 <- plot(sqrt(nc$u^2 + nc$v^2), lev = 500)
+stopifnot(abs(spd_500$fixed_coords$lev - 500) < 1e-6)
 
 # Map projections
 plot(nc, "temp", proj = "orthographic", lon0 = 140, lat0 = 30, uv = c("u", "v"), skip = 2)
@@ -117,6 +127,8 @@ nc_xsection(nc, "u", lon = 140, zlog = FALSE)
 # 1D vertical profile and time series
 plot(nc["temp", lon = 140, lat = 35, lev = NULL])
 plot(nc["temp", lon = 140, lat = 35, time = NULL])
+ti <- ncr:::.time_axis_info(as.POSIXct(c("2026-11-15 00:00:00", "2026-11-16 00:00:00"), tz = "UTC"))
+stopifnot(identical(ti$fmt, "%Y%m%d %H"), any(grepl("^[0-9]{8} [0-9]{2}$", ti$labels)))
 
 grDevices::dev.off()
 stopifnot(file.exists(pdf_file) && file.info(pdf_file)$size > 0)

@@ -27,6 +27,7 @@ export(nc_project)
 export(nc_reset)
 export(nc_set)
 export(nc_slice)
+export(nc_vector)
 export(nc_xsection)
 export(pres2alt)
 importFrom(RNetCDF,

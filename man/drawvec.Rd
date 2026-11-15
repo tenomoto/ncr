@@ -2,36 +2,29 @@
 % Please edit documentation in R/plot.R
 \name{drawvec}
 \alias{drawvec}
-\title{Draw Self-Scaling Vector Arrows}
+\title{Draw Self-Scaling Vector Arrows (Low-Level Overlay)}
 \usage{
 drawvec(
   x,
-  y = NULL,
-  u = NULL,
-  v = NULL,
+  y,
+  u,
+  v,
   length = 0.05,
   uvref = NA,
   skip = 1L,
   col = "black",
-  proj = NULL,
-  lon0 = NULL,
-  lat0 = NULL,
   ref_legend = FALSE,
   ref_units = "",
   ...
 )
 }
 \arguments{
-\item{x}{Numeric vector of X coordinates, an `"ncr_slice"` object for the
-`u` component (when `y` is an `"ncr_slice"` for `v`), or a vector
-`"ncr_slice"` object (created via `nc[c("u", "v")]`).}
+\item{x}{Numeric vector of X coordinates.}
 
-\item{y}{Numeric vector of Y coordinates, an `"ncr_slice"` object for the
-`v` component, or `NULL` when `x` is a vector `"ncr_slice"`.}
+\item{y}{Numeric vector of Y coordinates.}
 
 \item{u, v}{Numeric matrices (or vectors) of horizontal and vertical vector
-components matching `length(x)` by `length(y)` (ignored when `x` is an
-`"ncr_slice"`).}
+components matching `length(x)` by `length(y)`.}
 
 \item{length}{Arrowhead length in inches passed to [graphics::arrows()]
 (default `0.05`).}
@@ -44,9 +37,6 @@ plots every second point along `x` and `y`).}
 
 \item{col}{Arrow color (default `"black"`).}
 
-\item{proj, lon0, lat0}{Optional map projection settings when `x` is an
-`"ncr_slice"` (defaults to `nc_get()`).}
-
 \item{ref_legend}{Logical; if `TRUE`, draws a reference vector arrow above
 the `"Ref vector: ..."` label in the bottom-right margin.}
 
@@ -58,11 +48,11 @@ the `"Ref vector: ..."` label in the bottom-right margin.}
 Invisibly returns the reference magnitude `uvref`.
 }
 \description{
-Plots a 2D vector field `(u, v)` on an existing base R graphics device,
-scaling arrow lengths automatically to the grid spacing and plot window
-(`par("usr")`). Accepts either two `"ncr_slice"` objects `drawvec(u, v)`,
-a single vector `"ncr_slice"` object `drawvec(uv)`, or explicit numeric
-coordinates and matrices `drawvec(x, y, u, v)`.
+Low-level graphics primitive that overlays a 2D vector field `(u, v)` onto
+an existing base R plot, scaling arrow lengths automatically to the grid
+spacing and plot window (`par("usr")`). For NetCDF `"ncr"` or `"ncr_slice"`
+objects (with slicing, map projections, and `add = FALSE` support), use
+[nc_vector()].
 }
 \examples{
 x <- seq(100, 160, by = 10)
@@ -71,4 +61,7 @@ u <- outer(x, y, function(lon, lat) 10 * cos(lat * pi / 180))
 v <- outer(x, y, function(lon, lat) 5 * sin(lon * pi / 180))
 plot(NA, xlim = range(x), ylim = range(y), xlab = "lon", ylab = "lat")
 drawvec(x, y, u, v)
+}
+\seealso{
+[nc_vector()]
 }

@@ -110,9 +110,9 @@ You can layer multiple fields onto the same map step by step:
 
 1. Draw the base shaded field with `plot(..., contour = FALSE)`.
 2. Overlay line contours from another variable or level with `contour(..., add = TRUE)`.
-3. Overlay self-scaling wind vectors using `drawvec(u, v)` (which accepts two
-   `ncr_slice` objects directly, a single `nc[c("u", "v")]` vector slice, or
-   explicit `(x, y, u, v)` arrays).
+3. Overlay self-scaling wind vectors using `nc_vector(u, v, add = TRUE)`
+   (or `nc_vector(nc, c("u", "v"), ..., add = TRUE)`, or the low-level
+   `drawvec(x, y, u, v)` helper for raw numeric arrays).
 
 ```{r incremental}
 nc_set(lon = c(80, 200), lat = c(10, 70))
@@ -121,14 +121,14 @@ nc_set(lon = c(80, 200), lat = c(10, 70))
 plot(nc["T_p", lev = 850] - 273.15,
      contour = FALSE,
      main = "850 hPa Temp (shaded), 500 hPa Z (contour), 850 hPa Wind",
-     sub = "Incremental build with add = TRUE and drawvec(u, v)",
+     sub = "Incremental build with add = TRUE and nc_vector()",
      xlab = "Lon", ylab = "Lat")
 
 # 2. Overlay 500 hPa geopotential height contours
 contour(nc, "z_p", lev = 500, add = TRUE, col = "navy", lwd = 1.4)
 
 # 3. Overlay 850 hPa wind vectors by passing (u, v) slices directly
-drawvec(nc["u_p", lev = 850], nc["v_p", lev = 850], skip = 4, col = "gray15")
+nc_vector(nc["u_p", lev = 850], nc["v_p", lev = 850], skip = 4, col = "gray15", add = TRUE)
 
 nc_reset()
 ```
@@ -137,7 +137,7 @@ nc_reset()
 
 Standard base R arguments such as `main`, `sub`, `xlab`, `ylab`, `col`, `add`,
 `lwd`, `lty`, and `cex.main` work across `plot()`, `contour()`, and
-`drawvec()`. Keep a few `ncr`-specific behaviors in mind:
+`nc_vector()`. Keep a few `ncr`-specific behaviors in mind:
 
 - **`col` interpretation**: When `filled = TRUE`, `col` can be a vector of
   colors, a palette function (e.g., `terrain.colors`), or an HCL palette name
@@ -151,8 +151,8 @@ Standard base R arguments such as `main`, `sub`, `xlab`, `ylab`, `col`, `add`,
 - **Margins on `filled = TRUE` plots**: `plot()` temporarily widens the right
   margin (`par("mar")[4]`) to place the `fields::image.plot(legend.only = TRUE)`
   colorbar and restores `par("mar")` on exit. Subsequent `add = TRUE` and
-  `drawvec()` calls still align with the main plot panel because `par("usr")`
-  is preserved.
+  `nc_vector(..., add = TRUE)` and `drawvec()` calls still align with the main
+  plot panel because `par("usr")` is preserved.
 
 ## Map Projections
 

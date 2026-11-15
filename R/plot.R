@@ -1,19 +1,15 @@
-#' Draw Self-Scaling Vector Arrows
+#' Draw Self-Scaling Vector Arrows (Low-Level Overlay)
 #'
-#' Plots a 2D vector field `(u, v)` on an existing base R graphics device,
-#' scaling arrow lengths automatically to the grid spacing and plot window
-#' (`par("usr")`). Accepts either two `"ncr_slice"` objects `drawvec(u, v)`,
-#' a single vector `"ncr_slice"` object `drawvec(uv)`, or explicit numeric
-#' coordinates and matrices `drawvec(x, y, u, v)`.
+#' Low-level graphics primitive that overlays a 2D vector field `(u, v)` onto
+#' an existing base R plot, scaling arrow lengths automatically to the grid
+#' spacing and plot window (`par("usr")`). For NetCDF `"ncr"` or `"ncr_slice"`
+#' objects (with slicing, map projections, and `add = FALSE` support), use
+#' [nc_vector()].
 #'
-#' @param x Numeric vector of X coordinates, an `"ncr_slice"` object for the
-#'   `u` component (when `y` is an `"ncr_slice"` for `v`), or a vector
-#'   `"ncr_slice"` object (created via `nc[c("u", "v")]`).
-#' @param y Numeric vector of Y coordinates, an `"ncr_slice"` object for the
-#'   `v` component, or `NULL` when `x` is a vector `"ncr_slice"`.
+#' @param x Numeric vector of X coordinates.
+#' @param y Numeric vector of Y coordinates.
 #' @param u,v Numeric matrices (or vectors) of horizontal and vertical vector
-#'   components matching `length(x)` by `length(y)` (ignored when `x` is an
-#'   `"ncr_slice"`).
+#'   components matching `length(x)` by `length(y)`.
 #' @param length Arrowhead length in inches passed to [graphics::arrows()]
 #'   (default `0.05`).
 #' @param uvref Reference vector magnitude used for scaling. If `NA` (default),
@@ -21,13 +17,12 @@
 #' @param skip Integer subsampling stride (`1L` plots every grid point, `2L`
 #'   plots every second point along `x` and `y`).
 #' @param col Arrow color (default `"black"`).
-#' @param proj,lon0,lat0 Optional map projection settings when `x` is an
-#'   `"ncr_slice"` (defaults to `nc_get()`).
 #' @param ref_legend Logical; if `TRUE`, draws a reference vector arrow above
 #'   the `"Ref vector: ..."` label in the bottom-right margin.
 #' @param ref_units Optional character string for reference vector units.
 #' @param ... Additional graphical parameters passed to [graphics::arrows()].
 #' @return Invisibly returns the reference magnitude `uvref`.
+#' @seealso [nc_vector()]
 #' @examples
 #' x <- seq(100, 160, by = 10)
 #' y <- seq(10, 50, by = 10)
@@ -36,46 +31,12 @@
 #' plot(NA, xlim = range(x), ylim = range(y), xlab = "lon", ylab = "lat")
 #' drawvec(x, y, u, v)
 #' @export
-drawvec <- function(x, y = NULL, u = NULL, v = NULL,
+drawvec <- function(x, y, u, v,
                     length = 0.05, uvref = NA, skip = 1L, col = "black",
-                    proj = NULL, lon0 = NULL, lat0 = NULL,
                     ref_legend = FALSE, ref_units = "", ...) {
-  if (inherits(x, "ncr_slice")) {
-    s <- x
-    if (inherits(y, "ncr_slice")) {
-      if (!identical(dim(x$z), dim(y$z))) {
-        stop("'u' and 'v' slices must have identical dimensions.", call. = FALSE)
-      }
-      u_mat <- x$z
-      v_mat <- y$z
-    } else if (isTRUE(s$has_uv) && !is.null(s$u) && !is.null(s$v)) {
-      u_mat <- s$u
-      v_mat <- s$v
-    } else {
-      stop("Provide either drawvec(u_slice, v_slice) or a vector slice from nc[c('u', 'v')].",
-           call. = FALSE)
-    }
-
-    if (is.null(proj)) proj <- nc_get()$proj
-    if (is.null(lon0)) lon0 <- nc_get()$lon0
-    if (is.null(lat0)) lat0 <- nc_get()$lat0
-    proj_norm <- tolower(trimws(as.character(proj)[1L]))
-    is_proj <- (s$plot_type == "lonlat") &&
-      !(proj_norm %in% c("lonlat", "cylindrical", "equirectangular", "eqc", "none", ""))
-    if (is_proj) {
-      return(.draw_projected_vectors(s$x, s$y, u_mat, v_mat, proj = proj_norm,
-                                     lon0 = lon0, lat0 = lat0,
-                                     skip = skip, uvref = uvref, length = length,
-                                     col = col, ref_legend = ref_legend,
-                                     ref_units = if (nzchar(ref_units)) ref_units else if (!is.null(s$uv_units)) s$uv_units else s$units,
-                                     ...))
-    }
-    x <- s$x
-    y <- s$y
-    u <- u_mat
-    v <- v_mat
-  } else if (is.null(y) || is.null(u) || is.null(v)) {
-    stop("Numeric drawvec() requires x, y, u, and v (or pass ncr_slice objects).",
+  if (missing(x) || missing(y) || missing(u) || missing(v) ||
+      !is.numeric(x) || !is.numeric(y) || !is.numeric(u) || !is.numeric(v)) {
+    stop("drawvec() requires numeric x, y, u, and v. Use nc_vector() for 'ncr' or 'ncr_slice' objects.",
          call. = FALSE)
   }
 
@@ -116,25 +77,145 @@ drawvec <- function(x, y = NULL, u = NULL, v = NULL,
   invisible(uvref)
 }
 
-.draw_ref_vector <- function(ref, ref_len_usr, length = 0.05, units = "", col = "black") {
+#' High-Level Vector Field Plot for NetCDF Data
+#'
+#' Plots or overlays 2D vector arrows from an `"ncr"` dataset or `"ncr_slice"`
+#' objects, supporting dimension slicing (`lon`, `lat`, `lev`, `time`), map
+#' projections, and `add = FALSE` (default, starting a new plot) or `add = TRUE`
+#' (overlaying onto the active plot).
+#'
+#' @param x An `"ncr"` dataset object, an `"ncr_slice"` object for the `u`
+#'   component (when `y` is an `"ncr_slice"` for `v`), or a vector `"ncr_slice"`
+#'   object (created via `nc[c("u", "v")]`).
+#' @param y A character vector of two variable names `c("u", "v")` when `x` is
+#'   an `"ncr"` object, an `"ncr_slice"` object for the `v` component, or `NULL`
+#'   when `x` is a vector `"ncr_slice"`.
+#' @param lon,lat,lev,time Optional dimension selectors passed to [nc_slice()]
+#'   when `x` is an `"ncr"` object or used to re-slice `"ncr_slice"` inputs.
+#' @param length Arrowhead length in inches passed to [drawvec()]
+#'   (default `0.05`).
+#' @param uvref Reference vector magnitude used for scaling (`NA` computes it
+#'   automatically).
+#' @param skip Integer subsampling stride (`1L` plots every grid point).
+#' @param col Arrow color (default `"black"`).
+#' @param map Map overlay specification when `add = FALSE` (defaults to
+#'   `nc_get()$map`).
+#' @param proj,lon0,lat0 Optional map projection settings (defaults to
+#'   `nc_get()`).
+#' @param ref_legend Logical; if `TRUE`, draws the reference vector legend when
+#'   overlaying with `add = TRUE`.
+#' @param ref_units Optional character string for reference vector units.
+#' @param add Logical; if `FALSE` (default), starts a new plot before drawing
+#'   vectors. If `TRUE`, overlays vectors onto the active plot.
+#' @param ... Additional graphical parameters passed to [plot.ncr_slice()] (when
+#'   `add = FALSE`) or [drawvec()] (when `add = TRUE`).
+#' @return Invisibly returns the plotted `"ncr_slice"` (when `add = FALSE`) or
+#'   the reference magnitude `uvref` (when `add = TRUE`).
+#' @seealso [drawvec()], [plot.ncr()], [contour.ncr()]
+#' @examples
+#' f <- nc_example()
+#' nc <- nc_open(f)
+#' nc_vector(nc, c("u", "v"), lev = 850, skip = 2)
+#' nc_close(nc)
+#' @export
+nc_vector <- function(x, y = NULL,
+                      lon = missing_arg(),
+                      lat = missing_arg(),
+                      lev = missing_arg(),
+                      time = missing_arg(),
+                      length = 0.05, uvref = NA, skip = 1L, col = "black",
+                      map = NULL, proj = NULL, lon0 = NULL, lat0 = NULL,
+                      ref_legend = FALSE, ref_units = "", add = FALSE, ...) {
+  if (inherits(x, "ncr")) {
+    if (!is.null(y) && !is.character(y)) {
+      stop("When 'x' is an 'ncr' object, 'y' must be a character vector such as c('u', 'v') or NULL.",
+           call. = FALSE)
+    }
+    s <- nc_slice(x, var = NULL, lon = lon, lat = lat, lev = lev, time = time, uv = y)
+    u_mat <- s$u
+    v_mat <- s$v
+  } else if (inherits(x, "ncr_slice")) {
+    s <- .reslice_if_needed(x, lon = lon, lat = lat, lev = lev, time = time)
+    if (inherits(y, "ncr_slice")) {
+      y <- .reslice_if_needed(y, lon = lon, lat = lat, lev = lev, time = time)
+      if (!identical(dim(s$z), dim(y$z))) {
+        stop("'u' and 'v' slices must have identical dimensions.", call. = FALSE)
+      }
+      u_mat <- s$z
+      v_mat <- y$z
+      s$var_name <- paste0("(", s$var_name, ", ", y$var_name, ")")
+      s$long_name <- "Wind vector"
+    } else if (isTRUE(s$has_uv) && !is.null(s$u) && !is.null(s$v)) {
+      u_mat <- s$u
+      v_mat <- s$v
+    } else {
+      stop("Provide nc_vector(nc, c('u', 'v')), nc_vector(u_slice, v_slice), or a vector slice from nc[c('u', 'v')].",
+           call. = FALSE)
+    }
+  } else {
+    stop("'x' must be an 'ncr' or 'ncr_slice' object. Use drawvec(x, y, u, v) for numeric arrays.",
+         call. = FALSE)
+  }
+
+  s$u <- u_mat
+  s$v <- v_mat
+  s$has_uv <- TRUE
+  s$is_vector <- TRUE
+
+  if (!isTRUE(add)) {
+    return(plot.ncr_slice(s, filled = FALSE, contour = FALSE,
+                          map = map, proj = proj, lon0 = lon0, lat0 = lat0,
+                          skip = skip, uvref = uvref, length = length,
+                          col = col, add = FALSE, ...))
+  }
+
+  if (is.null(proj)) proj <- nc_get()$proj
+  if (is.null(lon0)) lon0 <- nc_get()$lon0
+  if (is.null(lat0)) lat0 <- nc_get()$lat0
+  proj_norm <- tolower(trimws(as.character(proj)[1L]))
+  is_proj <- (s$plot_type == "lonlat") &&
+    !(proj_norm %in% c("lonlat", "cylindrical", "equirectangular", "eqc", "none", ""))
+  u_str <- if (nzchar(ref_units)) ref_units else if (!is.null(s$uv_units)) s$uv_units else s$units
+  if (is_proj) {
+    return(.draw_projected_vectors(s$x, s$y, u_mat, v_mat, proj = proj_norm,
+                                   lon0 = lon0, lat0 = lat0,
+                                   skip = skip, uvref = uvref, length = length,
+                                   col = col, ref_legend = ref_legend,
+                                   ref_units = u_str, ...))
+  }
+  drawvec(s$x, s$y, u_mat, v_mat, length = length, uvref = uvref, skip = skip,
+          col = col, ref_legend = ref_legend, ref_units = u_str, ...)
+}
+
+.draw_ref_vector <- function(ref, ref_len_usr, length = 0.05, units = "",
+                             col = "black", x_right = NULL, y_bottom = NULL) {
   if (!is.finite(ref) || ref <= 0 || !is.finite(ref_len_usr) || ref_len_usr <= 0) {
     return(invisible(NULL))
   }
   usr <- graphics::par("usr")
   pin <- graphics::par("pin")
   line_y <- graphics::par("csi") * abs(usr[4L] - usr[3L]) / max(pin[2L], 1e-6)
-  y_arr <- usr[3L] - 2.3 * line_y
-  x_end <- usr[2L]
+  x_end <- if (!is.null(x_right) && is.finite(x_right)) x_right else usr[2L]
   x_start <- x_end - ref_len_usr
-  graphics::arrows(x_start, y_arr, x_end, y_arr,
-                   length = length, col = col, xpd = NA)
   u_str <- if (is.character(units) && length(units) == 1L && nzchar(units)) {
     paste0(" ", units)
   } else {
     ""
   }
-  graphics::mtext(sprintf("Ref vector: %s%s", signif(ref, 3), u_str),
-                  side = 1, line = 3.2, adj = 1, cex = 0.78, col = "gray25")
+  lbl <- sprintf("Ref vector: %s%s", signif(ref, 3), u_str)
+  if (!is.null(y_bottom) && is.finite(y_bottom)) {
+    y_arr <- y_bottom - 0.8 * line_y
+    y_txt <- y_bottom - 1.45 * line_y
+    graphics::arrows(x_start, y_arr, x_end, y_arr,
+                     length = length, col = col, xpd = NA)
+    graphics::text(x_end, y_txt, labels = lbl,
+                   adj = c(1, 1), cex = 0.78, col = "gray25", xpd = NA)
+  } else {
+    y_arr <- usr[3L] - 2.0 * line_y
+    graphics::arrows(x_start, y_arr, x_end, y_arr,
+                     length = length, col = col, xpd = NA)
+    graphics::mtext(lbl, side = 1, line = 2.8, adj = 1, cex = 0.78, col = "gray25")
+  }
   invisible(NULL)
 }
 
@@ -298,13 +379,38 @@ plot.ncr <- function(x,
   )
 }
 
+.eval_slice_expr <- function(expr, lon, lat, lev, time) {
+  if (inherits(expr, "ncr_slice")) {
+    return(.reslice_if_needed(expr, lon = lon, lat = lat, lev = lev, time = time))
+  }
+  if (!is.list(expr) || is.null(expr$kind)) {
+    return(expr)
+  }
+  if (identical(expr$kind, "ops")) {
+    e1 <- .eval_slice_expr(expr$e1, lon, lat, lev, time)
+    if (is.null(expr$e2)) {
+      return(do.call(expr$op, list(e1)))
+    }
+    e2 <- .eval_slice_expr(expr$e2, lon, lat, lev, time)
+    return(do.call(expr$op, list(e1, e2)))
+  }
+  if (identical(expr$kind, "math")) {
+    x_eval <- .eval_slice_expr(expr$x, lon, lat, lev, time)
+    return(do.call(expr$fn, c(list(x_eval), expr$dots)))
+  }
+  stop("Unsupported slice expression.", call. = FALSE)
+}
+
 .reslice_if_needed <- function(x, lon, lat, lev, time) {
   has_override <- !is_missing_arg(lon) || !is_missing_arg(lat) ||
     !is_missing_arg(lev) || !is_missing_arg(time)
   if (!has_override) return(x)
 
+  if (!is.null(x$expr)) {
+    return(.eval_slice_expr(x$expr, lon = lon, lat = lat, lev = lev, time = time))
+  }
   if (is.null(x$source) || isTRUE(x$source$nc$env$closed)) {
-    stop("Cannot re-slice this 'ncr_slice' object (dataset is closed or slice is a derived expression).",
+    stop("Cannot re-slice this 'ncr_slice' object (dataset is closed or slice has no source).",
          call. = FALSE)
   }
   src <- x$source
@@ -518,7 +624,7 @@ nc_hovmoeller <- function(x,
     }
     s <- nc_slice(x, var = var, lon = lon, lat = lat, lev = lev, time = time)
   } else if (inherits(x, "ncr_slice")) {
-    s <- x
+    s <- .reslice_if_needed(x, lon = lon, lat = lat, lev = lev, time = time)
   } else {
     stop("'x' must be an 'ncr' or 'ncr_slice' object.", call. = FALSE)
   }
@@ -546,7 +652,7 @@ nc_xsection <- function(x,
     }
     s <- nc_slice(x, var = var, lon = lon, lat = lat, lev = lev, time = time)
   } else if (inherits(x, "ncr_slice")) {
-    s <- x
+    s <- .reslice_if_needed(x, lon = lon, lat = lat, lev = lev, time = time)
   } else {
     stop("'x' must be an 'ncr' or 'ncr_slice' object.", call. = FALSE)
   }
@@ -894,7 +1000,7 @@ nc_xsection <- function(x,
   old_mar <- graphics::par("mar")
   on.exit(graphics::par(mar = old_mar), add = TRUE)
   has_sub <- !is.null(sub) && nzchar(sub)
-  mar_bot <- if (isTRUE(x$has_uv) || has_sub) 3.8 else 1.4
+  mar_bot <- if (isTRUE(x$has_uv) || has_sub) 2.8 else 1.4
   mar_top <- if (grepl("\n", main)) 3.6 else 2.8
   mar_new <- c(
     mar_bot,
@@ -966,7 +1072,8 @@ nc_xsection <- function(x,
     .draw_projected_vectors(lon, lat, x$u, x$v, proj = pe$proj,
                             lon0 = lon0, lat0 = lat0,
                             skip = skip, uvref = uvref, length = length,
-                            ref_legend = TRUE, ref_units = uv_u)
+                            ref_legend = TRUE, ref_units = uv_u,
+                            x_right = xlim[2L], y_bottom = ylim[1L])
   }
 
   if (isTRUE(filled)) {
@@ -1001,7 +1108,8 @@ nc_xsection <- function(x,
 .draw_projected_vectors <- function(lon, lat, u, v, proj, lon0, lat0,
                                     skip = 1L, uvref = NA, length = 0.05,
                                     col = "black", ref_legend = FALSE,
-                                    ref_units = "", ...) {
+                                    ref_units = "", x_right = NULL,
+                                    y_bottom = NULL, ...) {
   skip <- max(1L, as.integer(skip)[1L])
   iy <- seq.int(1L, length(lat), by = skip)
   # Exclude exact poles where zonal tangent direction is singular
@@ -1058,7 +1166,8 @@ nc_xsection <- function(x,
   }
   if (isTRUE(ref_legend)) {
     .draw_ref_vector(uvref, ref_len_usr = 1.1 * cell_d, length = length,
-                     units = ref_units, col = col)
+                     units = ref_units, col = col,
+                     x_right = x_right, y_bottom = y_bottom)
   }
   invisible(uvref)
 }
@@ -1176,10 +1285,8 @@ nc_xsection <- function(x,
 
 .time_axis_info <- function(t_posix) {
   span_sec <- diff(range(as.numeric(t_posix), na.rm = TRUE))
-  fmt <- if (span_sec <= 3 * 86400) {
-    "%b %d %H:%M"
-  } else if (span_sec <= 180 * 86400) {
-    "%b %d"
+  fmt <- if (span_sec <= 180 * 86400) {
+    "%Y%m%d %H"
   } else if (span_sec <= 3 * 365 * 86400) {
     "%Y-%m"
   } else {

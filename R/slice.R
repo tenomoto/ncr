@@ -148,6 +148,17 @@ nc_slice <- function(x,
   if (name %in% c("env", "path", "meta")) {
     return(.subset2(x, name))
   }
+  if (name %in% names(x$meta$vars)) {
+    return(nc_slice(x, var = name))
+  }
+  if (name %in% names(x$meta$dims)) {
+    d <- x$meta$dims[[name]]
+    return(if (d$axis == "time" && !is.null(d$time_posix)) d$time_posix else d$vals)
+  }
+  if (name %in% names(x$meta$axis_map)) {
+    d <- x$meta$dims[[x$meta$axis_map[[name]]]]
+    return(if (d$axis == "time" && !is.null(d$time_posix)) d$time_posix else d$vals)
+  }
   nc_slice(x, var = name)
 }
 
@@ -205,6 +216,8 @@ Ops.ncr_slice <- function(e1, e2) {
     res$has_uv <- FALSE
     res$u <- NULL
     res$v <- NULL
+    res$source <- NULL
+    res$expr <- list(kind = "ops", op = op, e1 = e1, e2 = NULL)
     if (!(op %in% c("+", "-"))) res$units <- ""
     return(res)
   }
@@ -241,6 +254,7 @@ Ops.ncr_slice <- function(e1, e2) {
   res$u <- NULL
   res$v <- NULL
   res$source <- NULL
+  res$expr <- list(kind = "ops", op = op, e1 = e1, e2 = e2)
   res
 }
 
@@ -257,6 +271,7 @@ Math.ncr_slice <- function(x, ...) {
   res$u <- NULL
   res$v <- NULL
   res$source <- NULL
+  res$expr <- list(kind = "math", fn = .Generic, x = x, dots = list(...))
   res
 }
 

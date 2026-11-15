@@ -1,7 +1,7 @@
 Package: ncr
 Type: Package
 Title: Exploratory Visualization and Slicing of NetCDF Files in Base R
-Version: 0.5.2
+Version: 0.5.3
 Authors@R: person("Takeshi", "Enomoto", email = "takeshi.enomoto@gmail.com", role = c("aut", "cre"))
 Description: Provides a thin, interactive GrADS- and NCL-inspired S3 wrapper
     around 'RNetCDF' and base R graphics ('fields' and 'maps') for rapid
