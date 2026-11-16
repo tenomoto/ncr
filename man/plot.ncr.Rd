@@ -14,7 +14,7 @@
   ...,
   uv = NULL,
   filled = NULL,
-  contour = TRUE,
+  contour = FALSE,
   map = NULL,
   proj = NULL,
   lon0 = NULL,
@@ -43,7 +43,7 @@
   time = missing_arg(),
   uv = NULL,
   filled = NULL,
-  contour = TRUE,
+  contour = FALSE,
   map = NULL,
   proj = NULL,
   lon0 = NULL,
@@ -127,7 +127,8 @@ functions.}
 \item{filled}{Logical; if `TRUE` (default for scalar `plot()`), draws filled
 contours with a colorbar via [fields::image.plot()].}
 
-\item{contour}{Logical; if `TRUE`, draws contour lines over filled contours.}
+\item{contour}{Logical; if `TRUE`, draws contour lines over filled contours
+(defaults to `FALSE` for `plot()` and `TRUE` for `contour()`).}
 
 \item{map}{Map overlay specification for `lon`-`lat` slices (defaults to
 `nc_get()$map` when `NULL`):

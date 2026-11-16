@@ -46,7 +46,8 @@ scalar + vector `c("temp", "u", "v")`.}
 \item{filled}{Logical; if `TRUE` (default for scalar `plot()`), draws filled
 contours with a colorbar via [fields::image.plot()].}
 
-\item{contour}{Logical; if `TRUE`, draws contour lines over filled contours.}
+\item{contour}{Logical; if `TRUE`, draws contour lines over filled contours
+(defaults to `FALSE` for `plot()` and `TRUE` for `contour()`).}
 
 \item{...}{Additional slicing arguments (`lon`, `lat`, `lev`, `time`) when
 `x` is an `"ncr"` object, or graphical parameters passed to underlying plot

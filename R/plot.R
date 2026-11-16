@@ -268,7 +268,8 @@ alt2pres <- function(z, p0 = 1013.25, H = 7.2) {
 #'   (for `contour.ncr()`).
 #' @param filled Logical; if `TRUE` (default for scalar `plot()`), draws filled
 #'   contours with a colorbar via [fields::image.plot()].
-#' @param contour Logical; if `TRUE`, draws contour lines over filled contours.
+#' @param contour Logical; if `TRUE`, draws contour lines over filled contours
+#'   (defaults to `FALSE` for `plot()` and `TRUE` for `contour()`).
 #' @param map Map overlay specification for `lon`-`lat` slices (defaults to
 #'   `nc_get()$map` when `NULL`):
 #'   * `TRUE`: draws coarse world coastlines via `maps::map("world")`.
@@ -329,7 +330,7 @@ plot.ncr <- function(x,
                      ...,
                      uv = NULL,
                      filled = NULL,
-                     contour = TRUE,
+                     contour = FALSE,
                      map = NULL,
                      proj = NULL,
                      lon0 = NULL,
@@ -435,7 +436,7 @@ plot.ncr_slice <- function(x,
                            time = missing_arg(),
                            uv = NULL,
                            filled = NULL,
-                           contour = TRUE,
+                           contour = FALSE,
                            map = NULL,
                            proj = NULL,
                            lon0 = NULL,
