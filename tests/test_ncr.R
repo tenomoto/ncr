@@ -19,11 +19,30 @@ st <- nc_get()
 stopifnot(identical(st$time, 1L))
 stopifnot(identical(st$proj, "lonlat"))
 stopifnot(identical(st$map, TRUE))
+stopifnot(identical(st$col, "RdYlBu"))
 
-nc_set(map = FALSE)
+nc_set(map = FALSE, col = "-RdYlBu")
 stopifnot(identical(nc_get()$map, FALSE))
+stopifnot(identical(nc_get()$col, "-RdYlBu"))
 nc_reset()
 stopifnot(identical(nc_get()$map, TRUE))
+stopifnot(identical(nc_get()$col, "RdYlBu"))
+
+# 2b. Reversed colour map "-PaletteName" and global state col
+lc_pos <- ncr:::.compute_levels_cols(c(0, 10), nlevels = 5, col = "RdYlBu")
+lc_neg <- ncr:::.compute_levels_cols(c(0, 10), nlevels = 5, col = "-RdYlBu")
+lc_dsh <- ncr:::.compute_levels_cols(c(0, 10), nlevels = 5, col = "-")
+stopifnot(identical(lc_pos$cols, rev(lc_neg$cols)))
+stopifnot(identical(lc_neg$cols, lc_dsh$cols))
+
+lc_v1 <- ncr:::.compute_levels_cols(c(0, 10), nlevels = 5, col = "Viridis")
+lc_v2 <- ncr:::.compute_levels_cols(c(0, 10), nlevels = 5, col = "-Viridis")
+stopifnot(identical(lc_v1$cols, rev(lc_v2$cols)))
+
+nc_set(col = "-Viridis")
+lc_st <- ncr:::.compute_levels_cols(c(0, 10), nlevels = 5, col = NULL)
+stopifnot(identical(lc_st$cols, lc_v2$cols))
+nc_reset()
 
 # 3. Slicing syntax: $, [, nc_slice
 s1 <- nc$temp
@@ -36,6 +55,28 @@ print(s1)
 # Slice at 500 hPa and time step 3
 s500 <- nc["temp", lev = 500, time = 3]
 stopifnot(s500$fixed_dims[[1]]$vals == 500)
+
+# 3a. Integral slices i, j, k, t
+sk2 <- nc["temp", k = 2, t = 3]
+stopifnot(identical(sk2$fixed_coords$lev, nc$lev[2]))
+stopifnot(identical(sk2$fixed_coords$time, nc$time[3]))
+s_ij <- nc["temp", i = 1:10, j = 2:8, k = 2, t = 1]
+stopifnot(identical(dim(s_ij$z), c(10L, 7L)))
+stopifnot(identical(s_ij$x, nc$lon[1:10]))
+
+nc_set(i = 1:12, j = 3:9, k = 2, t = 2)
+s_ij_st <- nc$temp
+stopifnot(identical(dim(s_ij_st$z), c(12L, 7L)))
+stopifnot(identical(s_ij_st$fixed_coords$lev, nc$lev[2]))
+nc_reset()
+
+# 3a-lazy. Verify lazy slicing avoids reading until needed
+s_lazy_leaf <- nc$temp
+stopifnot(isTRUE(.subset2(s_lazy_leaf, "lazy")))
+stopifnot(is.null(.subset2(s_lazy_leaf, "cache")$realized))
+s_lazy_expr <- nc$temp - 273.15
+stopifnot(isTRUE(.subset2(s_lazy_expr, "lazy")))
+stopifnot(is.null(.subset2(s_lazy_leaf, "cache")$realized))
 
 # Slice by timestamp string
 s_time <- nc["temp", time = "2026-01-02 00:00:00"]
@@ -101,10 +142,17 @@ nc_vector(nc[c("u", "v"), lev = 500], skip = 2, add = TRUE)
 nc_vector(nc, c("u", "v"), lev = 500, skip = 2)
 nc_vector(nc$u, nc$v, lev = 500, skip = 2)
 
-# Coordinate variable access and arithmetic + re-slicing
+# Coordinate variable access and arithmetic + lazy slicing in plot()
 stopifnot(is.numeric(nc$lon), is.numeric(nc$lat), is.numeric(nc$lev), inherits(nc$time, "POSIXct"))
-t_c <- plot(nc$temp - 273.15, lev = 850)
+leaf_tp <- nc$temp
+expr_tp <- leaf_tp - 273.15
+stopifnot(is.null(.subset2(leaf_tp, "cache")$realized))
+t_c <- plot(expr_tp, lev = 850, col = "-RdYlBu")
+# leaf_tp was never sliced at default lev = 1; only sliced once at lev = 850!
+stopifnot(is.null(.subset2(leaf_tp, "cache")$realized))
 stopifnot(abs(t_c$fixed_coords$lev - 850) < 1e-6)
+t_k2 <- plot(nc$temp - 273.15, k = 2)
+stopifnot(identical(t_k2$fixed_coords$lev, nc$lev[2]))
 spd_500 <- plot(sqrt(nc$u^2 + nc$v^2), lev = 500)
 stopifnot(abs(spd_500$fixed_coords$lev - 500) < 1e-6)
 

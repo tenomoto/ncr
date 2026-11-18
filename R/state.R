@@ -10,15 +10,17 @@
   .ncr_state$lon0 <- NULL
   .ncr_state$lat0 <- NULL
   .ncr_state$map  <- TRUE
+  .ncr_state$col  <- "RdYlBu"
 }
 
 .init_ncr_state()
 
 #' Get, Set, or Reset Global Slicing State
 #'
-#' Manages the GrADS-inspired global state (`lon`, `lat`, `lev`, `time`, `proj`)
-#' used for automatic slicing of NetCDF variables when dimensions are not
-#' explicitly specified in `[` or [nc_slice()].
+#' Manages the GrADS-inspired global state (`lon`, `lat`, `lev`, `time`, `proj`,
+#' `map`, `col`) used for automatic slicing and plotting of NetCDF variables
+#' when dimensions or options are not explicitly specified in `[` or
+#' [nc_slice()].
 #'
 #' @param lon Numeric value (nearest grid point), length-2 numeric vector
 #'   `c(min, max)` (coordinate range), `I(idx)` (1-based indices), or `NULL`
@@ -31,6 +33,8 @@
 #' @param time Integer index (default `1L`), character timestamp or length-2
 #'   range (e.g., `"2020-01-01"` or `c("2020-01-01", "2020-01-10")`), `POSIXt`
 #'   / `Date`, or `NULL` for all time steps.
+#' @param i,j,k,t Optional 1-based integer index selectors for `lon` (`i`),
+#'   `lat` (`j`), `lev` (`k`), and `time` (`t`).
 #' @param proj Character string naming the map projection (`"lonlat"`,
 #'   `"mercator"`, `"robinson"`, `"mollweide"`, `"orthographic"`,
 #'   `"stereographic"`, `"npstere"`, `"spstere"`, `"lambert"`).
@@ -38,22 +42,35 @@
 #' @param map Default map overlay (`TRUE` for `"world"`, `FALSE` for none,
 #'   `"hires"` / `"worldHires"` / `"japan"` via `mapdata`, or a custom
 #'   `list(x, y)`).
+#' @param col Default colour palette name (e.g., `"RdYlBu"`, `"-RdYlBu"` to
+#'   reverse), colour vector, or palette function.
 #' @return A named list of the current global state settings (`nc_set` and
 #'   `nc_reset` return the updated state invisibly; `nc_get` returns it
 #'   visibly).
 #' @examples
 #' nc_get()
-#' nc_set(lon = c(100, 180), lat = c(0, 60), lev = 500, time = 1)
+#' nc_set(lon = c(100, 180), lat = c(0, 60), lev = 500, time = 1, col = "-RdYlBu")
 #' nc_reset()
 #' @export
 nc_set <- function(lon = missing_arg(),
                    lat = missing_arg(),
                    lev = missing_arg(),
                    time = missing_arg(),
+                   i = missing_arg(),
+                   j = missing_arg(),
+                   k = missing_arg(),
+                   t = missing_arg(),
                    proj = missing_arg(),
                    lon0 = missing_arg(),
                    lat0 = missing_arg(),
-                   map = missing_arg()) {
+                   map = missing_arg(),
+                   col = missing_arg()) {
+  ijkt <- .merge_ijkt(lon = lon, lat = lat, lev = lev, time = time,
+                      i = i, j = j, k = k, t = t)
+  lon  <- ijkt$lon
+  lat  <- ijkt$lat
+  lev  <- ijkt$lev
+  time <- ijkt$time
   if (!is_missing_arg(lon))  .ncr_state$lon  <- lon
   if (!is_missing_arg(lat))  .ncr_state$lat  <- lat
   if (!is_missing_arg(lev))  .ncr_state$lev  <- lev
@@ -62,6 +79,7 @@ nc_set <- function(lon = missing_arg(),
   if (!is_missing_arg(lon0)) .ncr_state$lon0 <- lon0
   if (!is_missing_arg(lat0)) .ncr_state$lat0 <- lat0
   if (!is_missing_arg(map))  .ncr_state$map  <- map
+  if (!is_missing_arg(col))  .ncr_state$col  <- col
   invisible(nc_get())
 }
 
@@ -76,7 +94,8 @@ nc_get <- function() {
     proj = .ncr_state$proj,
     lon0 = .ncr_state$lon0,
     lat0 = .ncr_state$lat0,
-    map  = .ncr_state$map
+    map  = .ncr_state$map,
+    col  = .ncr_state$col
   )
 }
 
@@ -93,4 +112,29 @@ missing_arg <- function() {
 
 is_missing_arg <- function(x) {
   inherits(x, "ncr_missing")
+}
+
+.as_index_spec <- function(idx) {
+  if (is.null(idx) || (length(idx) == 1L && is.na(idx))) return(NULL)
+  if (inherits(idx, "AsIs")) return(idx)
+  idx <- as.integer(idx)
+  if (length(idx) == 2L && abs(idx[2L] - idx[1L]) > 1L) {
+    idx <- seq.int(idx[1L], idx[2L])
+  }
+  I(idx)
+}
+
+.merge_ijkt <- function(lon = missing_arg(),
+                        lat = missing_arg(),
+                        lev = missing_arg(),
+                        time = missing_arg(),
+                        i = missing_arg(),
+                        j = missing_arg(),
+                        k = missing_arg(),
+                        t = missing_arg()) {
+  if (!is_missing_arg(i)) lon  <- .as_index_spec(i)
+  if (!is_missing_arg(j)) lat  <- .as_index_spec(j)
+  if (!is_missing_arg(k)) lev  <- .as_index_spec(k)
+  if (!is_missing_arg(t)) time <- .as_index_spec(t)
+  list(lon = lon, lat = lat, lev = lev, time = time)
 }

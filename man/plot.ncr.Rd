@@ -41,6 +41,10 @@
   lat = missing_arg(),
   lev = missing_arg(),
   time = missing_arg(),
+  i = missing_arg(),
+  j = missing_arg(),
+  k = missing_arg(),
+  t = missing_arg(),
   uv = NULL,
   filled = NULL,
   contour = FALSE,
@@ -70,6 +74,10 @@
   lat = missing_arg(),
   lev = missing_arg(),
   time = missing_arg(),
+  i = missing_arg(),
+  j = missing_arg(),
+  k = missing_arg(),
+  t = missing_arg(),
   uv = NULL,
   filled = FALSE,
   ...
@@ -81,6 +89,10 @@
   lat = missing_arg(),
   lev = missing_arg(),
   time = missing_arg(),
+  i = missing_arg(),
+  j = missing_arg(),
+  k = missing_arg(),
+  t = missing_arg(),
   filled = FALSE,
   contour = !filled,
   map = NULL,
@@ -172,7 +184,10 @@ vertical axis logarithmically in pressure (default `TRUE`).}
 \item{main, sub, xlab, ylab}{Optional plot title, subtitle, and axis labels.}
 
 \item{lon, lat, lev, time}{Optional dimension selectors passed to [nc_slice()]
-(for `contour.ncr()`).}
+(for `contour.ncr()` or `plot.ncr_slice()`).}
+
+\item{i, j, k, t}{Optional 1-based integral index selectors for `lon` (`i`),
+`lat` (`j`), `lev` (`k`), and `time` (`t`).}
 }
 \value{
 Invisibly returns the plotted `"ncr_slice"` object.

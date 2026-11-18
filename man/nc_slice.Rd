@@ -4,6 +4,7 @@
 \alias{nc_slice}
 \alias{[.ncr}
 \alias{$.ncr}
+\alias{$.ncr_slice}
 \alias{print.ncr_slice}
 \alias{Ops.ncr_slice}
 \alias{Math.ncr_slice}
@@ -17,6 +18,10 @@ nc_slice(
   lat = missing_arg(),
   lev = missing_arg(),
   time = missing_arg(),
+  i = missing_arg(),
+  j = missing_arg(),
+  k = missing_arg(),
+  t = missing_arg(),
   uv = NULL,
   drop = TRUE,
   ...
@@ -29,12 +34,18 @@ nc_slice(
   lat = missing_arg(),
   lev = missing_arg(),
   time = missing_arg(),
+  i = missing_arg(),
+  j = missing_arg(),
+  k = missing_arg(),
+  t = missing_arg(),
   uv = NULL,
   drop = TRUE,
   ...
 )
 
 \method{$}{ncr}(x, name)
+
+\method{$}{ncr_slice}(x, name)
 
 \method{print}{ncr_slice}(x, ...)
 
@@ -63,6 +74,9 @@ global state for this slice:
 * Length-2 vector `c(min, max)`: closed coordinate interval `[min, max]`.
 * `I(indices)`: explicit 1-based integer index or index vector (e.g.,
   `I(1:5)`).}
+
+\item{i, j, k, t}{Optional 1-based integral index selectors for `lon` (`i`),
+`lat` (`j`), `lev` (`k`), and `time` (`t`).}
 
 \item{uv}{Optional character vector of length 2 (`c("u", "v")`) to attach a
 vector field overlay to a scalar slice.}

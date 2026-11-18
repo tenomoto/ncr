@@ -92,6 +92,8 @@ drawvec <- function(x, y, u, v,
 #'   when `x` is a vector `"ncr_slice"`.
 #' @param lon,lat,lev,time Optional dimension selectors passed to [nc_slice()]
 #'   when `x` is an `"ncr"` object or used to re-slice `"ncr_slice"` inputs.
+#' @param i,j,k,t Optional 1-based integral index selectors for `lon` (`i`),
+#'   `lat` (`j`), `lev` (`k`), and `time` (`t`).
 #' @param length Arrowhead length in inches passed to [drawvec()]
 #'   (default `0.05`).
 #' @param uvref Reference vector magnitude used for scaling (`NA` computes it
@@ -123,21 +125,33 @@ nc_vector <- function(x, y = NULL,
                       lat = missing_arg(),
                       lev = missing_arg(),
                       time = missing_arg(),
+                      i = missing_arg(),
+                      j = missing_arg(),
+                      k = missing_arg(),
+                      t = missing_arg(),
                       length = 0.05, uvref = NA, skip = 1L, col = "black",
                       map = NULL, proj = NULL, lon0 = NULL, lat0 = NULL,
                       ref_legend = FALSE, ref_units = "", add = FALSE, ...) {
+  ijkt <- .merge_ijkt(lon = lon, lat = lat, lev = lev, time = time,
+                      i = i, j = j, k = k, t = t)
+  lon  <- ijkt$lon
+  lat  <- ijkt$lat
+  lev  <- ijkt$lev
+  time <- ijkt$time
+
   if (inherits(x, "ncr")) {
     if (!is.null(y) && !is.character(y)) {
       stop("When 'x' is an 'ncr' object, 'y' must be a character vector such as c('u', 'v') or NULL.",
            call. = FALSE)
     }
-    s <- nc_slice(x, var = NULL, lon = lon, lat = lat, lev = lev, time = time, uv = y)
+    s <- .realize_slice(nc_slice(x, var = NULL, lon = lon, lat = lat,
+                                 lev = lev, time = time, uv = y))
     u_mat <- s$u
     v_mat <- s$v
   } else if (inherits(x, "ncr_slice")) {
-    s <- .reslice_if_needed(x, lon = lon, lat = lat, lev = lev, time = time)
+    s <- .realize_slice(x, lon = lon, lat = lat, lev = lev, time = time)
     if (inherits(y, "ncr_slice")) {
-      y <- .reslice_if_needed(y, lon = lon, lat = lat, lev = lev, time = time)
+      y <- .realize_slice(y, lon = lon, lat = lat, lev = lev, time = time)
       if (!identical(dim(s$z), dim(y$z))) {
         stop("'u' and 'v' slices must have identical dimensions.", call. = FALSE)
       }
@@ -265,7 +279,9 @@ alt2pres <- function(z, p0 = 1013.25, H = 7.2) {
 #'   length 1 for scalar, length 2 for vector `c("u", "v")`, or length 3 for
 #'   scalar + vector `c("temp", "u", "v")`.
 #' @param lon,lat,lev,time Optional dimension selectors passed to [nc_slice()]
-#'   (for `contour.ncr()`).
+#'   (for `contour.ncr()` or `plot.ncr_slice()`).
+#' @param i,j,k,t Optional 1-based integral index selectors for `lon` (`i`),
+#'   `lat` (`j`), `lev` (`k`), and `time` (`t`).
 #' @param filled Logical; if `TRUE` (default for scalar `plot()`), draws filled
 #'   contours with a colorbar via [fields::image.plot()].
 #' @param contour Logical; if `TRUE`, draws contour lines over filled contours
@@ -286,8 +302,9 @@ alt2pres <- function(z, p0 = 1013.25, H = 7.2) {
 #' @param lon0,lat0 Optional center longitude and latitude for map projections.
 #' @param nlevels Approximate number of contour levels (default `12`).
 #' @param levels Optional explicit numeric vector of contour break levels.
-#' @param col Color vector or palette function. Defaults to a diverging/spectral
-#'   HCL palette (`hcl.colors(..., "RdYlBu", rev = TRUE)`).
+#' @param col Color palette name (e.g., `"RdYlBu"`, `"-RdYlBu"` to reverse),
+#'   color vector, or palette function. Defaults to `nc_get()$col`
+#'   (`"RdYlBu"`).
 #' @param zlog Logical; for pressure cross-sections, whether to space the
 #'   vertical axis logarithmically in pressure (default `TRUE`).
 #' @param time_axis For Hovmoeller diagrams, which axis carries time: `"y"`
@@ -300,9 +317,9 @@ alt2pres <- function(z, p0 = 1013.25, H = 7.2) {
 #'   `0.05`).
 #' @param add Logical; if `TRUE`, adds contours or vectors to the current plot.
 #' @param main,sub,xlab,ylab Optional plot title, subtitle, and axis labels.
-#' @param ... Additional slicing arguments (`lon`, `lat`, `lev`, `time`) when
-#'   `x` is an `"ncr"` object, or graphical parameters passed to underlying plot
-#'   functions.
+#' @param ... Additional slicing arguments (`lon`, `lat`, `lev`, `time`, `i`,
+#'   `j`, `k`, `t`) when `x` is an `"ncr"` object, or graphical parameters
+#'   passed to underlying plot functions.
 #' @return Invisibly returns the plotted `"ncr_slice"` object.
 #' @examples
 #' f <- nc_example()
@@ -350,10 +367,11 @@ plot.ncr <- function(x,
                      ylab = NULL) {
   uv_slice <- if (inherits(uv, "ncr_slice")) uv else NULL
   uv_names <- if (is.character(uv)) uv else NULL
-  s <- nc_slice(x, var = var, uv = uv_names, ...)
+  s <- .realize_slice(nc_slice(x, var = var, uv = uv_names, ...))
   if (!is.null(uv_slice)) {
-    s$u <- if (!is.null(uv_slice$u)) uv_slice$u else uv_slice$z
-    s$v <- uv_slice$v
+    uv_real <- .realize_slice(uv_slice)
+    s$u <- if (!is.null(uv_real$u)) uv_real$u else uv_real$z
+    s$v <- uv_real$v
     s$has_uv <- TRUE
   }
   plot.ncr_slice(
@@ -380,52 +398,6 @@ plot.ncr <- function(x,
   )
 }
 
-.eval_slice_expr <- function(expr, lon, lat, lev, time) {
-  if (inherits(expr, "ncr_slice")) {
-    return(.reslice_if_needed(expr, lon = lon, lat = lat, lev = lev, time = time))
-  }
-  if (!is.list(expr) || is.null(expr$kind)) {
-    return(expr)
-  }
-  if (identical(expr$kind, "ops")) {
-    e1 <- .eval_slice_expr(expr$e1, lon, lat, lev, time)
-    if (is.null(expr$e2)) {
-      return(do.call(expr$op, list(e1)))
-    }
-    e2 <- .eval_slice_expr(expr$e2, lon, lat, lev, time)
-    return(do.call(expr$op, list(e1, e2)))
-  }
-  if (identical(expr$kind, "math")) {
-    x_eval <- .eval_slice_expr(expr$x, lon, lat, lev, time)
-    return(do.call(expr$fn, c(list(x_eval), expr$dots)))
-  }
-  stop("Unsupported slice expression.", call. = FALSE)
-}
-
-.reslice_if_needed <- function(x, lon, lat, lev, time) {
-  has_override <- !is_missing_arg(lon) || !is_missing_arg(lat) ||
-    !is_missing_arg(lev) || !is_missing_arg(time)
-  if (!has_override) return(x)
-
-  if (!is.null(x$expr)) {
-    return(.eval_slice_expr(x$expr, lon = lon, lat = lat, lev = lev, time = time))
-  }
-  if (is.null(x$source) || isTRUE(x$source$nc$env$closed)) {
-    stop("Cannot re-slice this 'ncr_slice' object (dataset is closed or slice has no source).",
-         call. = FALSE)
-  }
-  src <- x$source
-  nc_slice(
-    src$nc,
-    var  = src$var,
-    lon  = if (is_missing_arg(lon))  src$lon  else lon,
-    lat  = if (is_missing_arg(lat))  src$lat  else lat,
-    lev  = if (is_missing_arg(lev))  src$lev  else lev,
-    time = if (is_missing_arg(time)) src$time else time,
-    uv   = src$uv
-  )
-}
-
 #' @rdname plot.ncr
 #' @export
 plot.ncr_slice <- function(x,
@@ -434,6 +406,10 @@ plot.ncr_slice <- function(x,
                            lat = missing_arg(),
                            lev = missing_arg(),
                            time = missing_arg(),
+                           i = missing_arg(),
+                           j = missing_arg(),
+                           k = missing_arg(),
+                           t = missing_arg(),
                            uv = NULL,
                            filled = NULL,
                            contour = FALSE,
@@ -454,8 +430,16 @@ plot.ncr_slice <- function(x,
                            sub = NULL,
                            xlab = NULL,
                            ylab = NULL) {
-  x <- .reslice_if_needed(x, lon = lon, lat = lat, lev = lev, time = time)
+  ijkt <- .merge_ijkt(lon = lon, lat = lat, lev = lev, time = time,
+                      i = i, j = j, k = k, t = t)
+  lon  <- ijkt$lon
+  lat  <- ijkt$lat
+  lev  <- ijkt$lev
+  time <- ijkt$time
+
+  x <- .realize_slice(x, lon = lon, lat = lat, lev = lev, time = time)
   if (inherits(uv, "ncr_slice")) {
+    uv <- .realize_slice(uv, lon = lon, lat = lat, lev = lev, time = time)
     x$u <- if (!is.null(uv$u)) uv$u else uv$z
     x$v <- uv$v
     x$has_uv <- TRUE
@@ -516,10 +500,15 @@ contour.ncr <- function(x, var = NULL,
                         lat = missing_arg(),
                         lev = missing_arg(),
                         time = missing_arg(),
+                        i = missing_arg(),
+                        j = missing_arg(),
+                        k = missing_arg(),
+                        t = missing_arg(),
                         uv = NULL,
                         filled = FALSE,
                         ...) {
-  s <- nc_slice(x, var = var, lon = lon, lat = lat, lev = lev, time = time, uv = uv)
+  s <- nc_slice(x, var = var, lon = lon, lat = lat, lev = lev, time = time,
+                i = i, j = j, k = k, t = t, uv = uv)
   contour.ncr_slice(s, filled = filled, ...)
 }
 
@@ -530,6 +519,10 @@ contour.ncr_slice <- function(x,
                               lat = missing_arg(),
                               lev = missing_arg(),
                               time = missing_arg(),
+                              i = missing_arg(),
+                              j = missing_arg(),
+                              k = missing_arg(),
+                              t = missing_arg(),
                               filled = FALSE,
                               contour = !filled,
                               map = NULL,
@@ -545,7 +538,8 @@ contour.ncr_slice <- function(x,
                               xlab = NULL,
                               ylab = NULL,
                               ...) {
-  x <- .reslice_if_needed(x, lon = lon, lat = lat, lev = lev, time = time)
+  x <- .realize_slice(x, lon = lon, lat = lat, lev = lev, time = time,
+                      i = i, j = j, k = k, t = t)
   plot.ncr_slice(
     x,
     filled  = filled,
@@ -570,6 +564,7 @@ contour.ncr_slice <- function(x,
 #' @export
 points.ncr_slice <- function(x, skip = 1L, uvref = NA, length = 0.05, col = "black",
                              proj = NULL, lon0 = NULL, lat0 = NULL, ...) {
+  x <- .realize_slice(x)
   if (!isTRUE(x$has_uv) || is.null(x$u) || is.null(x$v)) {
     stop("'points.ncr_slice' requires a vector slice (created with c('u', 'v') or uv = c('u', 'v')).",
          call. = FALSE)
@@ -597,6 +592,8 @@ points.ncr_slice <- function(x, skip = 1L, uvref = NA, length = 0.05, col = "bla
 #'
 #' @inheritParams plot.ncr
 #' @param lon,lat,lev,time Dimension selectors passed to [nc_slice()].
+#' @param i,j,k,t Optional 1-based integral index selectors for `lon` (`i`),
+#'   `lat` (`j`), `lev` (`k`), and `time` (`t`).
 #' @return Invisibly returns the plotted `"ncr_slice"` object.
 #' @examples
 #' f <- nc_example()
@@ -611,10 +608,21 @@ nc_hovmoeller <- function(x,
                           lat = missing_arg(),
                           lev = missing_arg(),
                           time = NULL,
+                          i = missing_arg(),
+                          j = missing_arg(),
+                          k = missing_arg(),
+                          t = missing_arg(),
                           time_axis = "y",
                           filled = TRUE,
                           contour = TRUE,
                           ...) {
+  ijkt <- .merge_ijkt(lon = lon, lat = lat, lev = lev, time = time,
+                      i = i, j = j, k = k, t = t)
+  lon  <- ijkt$lon
+  lat  <- ijkt$lat
+  lev  <- ijkt$lev
+  time <- ijkt$time
+
   if (inherits(x, "ncr")) {
     # If neither lon nor lat was fixed by caller or global state, default to lat = 0 (equator)
     st <- nc_get()
@@ -623,9 +631,9 @@ nc_hovmoeller <- function(x,
     if (is.null(lon_eff) && is.null(lat_eff)) {
       lat <- 0
     }
-    s <- nc_slice(x, var = var, lon = lon, lat = lat, lev = lev, time = time)
+    s <- .realize_slice(nc_slice(x, var = var, lon = lon, lat = lat, lev = lev, time = time))
   } else if (inherits(x, "ncr_slice")) {
-    s <- .reslice_if_needed(x, lon = lon, lat = lat, lev = lev, time = time)
+    s <- .realize_slice(x, lon = lon, lat = lat, lev = lev, time = time)
   } else {
     stop("'x' must be an 'ncr' or 'ncr_slice' object.", call. = FALSE)
   }
@@ -640,10 +648,21 @@ nc_xsection <- function(x,
                         lat = missing_arg(),
                         lev = NULL,
                         time = missing_arg(),
+                        i = missing_arg(),
+                        j = missing_arg(),
+                        k = missing_arg(),
+                        t = missing_arg(),
                         zlog = TRUE,
                         filled = TRUE,
                         contour = TRUE,
                         ...) {
+  ijkt <- .merge_ijkt(lon = lon, lat = lat, lev = lev, time = time,
+                      i = i, j = j, k = k, t = t)
+  lon  <- ijkt$lon
+  lat  <- ijkt$lat
+  lev  <- ijkt$lev
+  time <- ijkt$time
+
   if (inherits(x, "ncr")) {
     st <- nc_get()
     lon_eff <- if (is_missing_arg(lon)) st$lon else lon
@@ -651,9 +670,9 @@ nc_xsection <- function(x,
     if (is.null(lon_eff) && is.null(lat_eff)) {
       lon <- stats::median(x$meta$dims[[x$meta$axis_map$lon]]$vals, na.rm = TRUE)
     }
-    s <- nc_slice(x, var = var, lon = lon, lat = lat, lev = lev, time = time)
+    s <- .realize_slice(nc_slice(x, var = var, lon = lon, lat = lat, lev = lev, time = time))
   } else if (inherits(x, "ncr_slice")) {
-    s <- .reslice_if_needed(x, lon = lon, lat = lat, lev = lev, time = time)
+    s <- .realize_slice(x, lon = lon, lat = lat, lev = lev, time = time)
   } else {
     stop("'x' must be an 'ncr' or 'ncr_slice' object.", call. = FALSE)
   }
@@ -689,12 +708,27 @@ nc_xsection <- function(x,
   }
   nbins <- max(1L, length(levels) - 1L)
   if (is.null(col)) {
+    col <- nc_get()$col
+  }
+  if (is.null(col)) {
     cols <- grDevices::hcl.colors(nbins, "RdYlBu", rev = TRUE)
   } else if (is.function(col)) {
     cols <- col(nbins)
-  } else if (length(col) == 1L && !startsWith(col, "#") &&
-             col %in% grDevices::hcl.pals()) {
-    cols <- grDevices::hcl.colors(nbins, col, rev = TRUE)
+  } else if (is.character(col) && length(col) == 1L && !startsWith(col, "#")) {
+    rev_pal <- TRUE
+    pal_name <- col
+    if (startsWith(pal_name, "-")) {
+      rev_pal <- FALSE
+      pal_name <- substring(pal_name, 2L)
+      if (!nzchar(pal_name)) pal_name <- "RdYlBu"
+    }
+    pals <- grDevices::hcl.pals()
+    m <- match(tolower(pal_name), tolower(pals))
+    if (!is.na(m)) {
+      cols <- grDevices::hcl.colors(nbins, pals[m], rev = rev_pal)
+    } else {
+      cols <- col
+    }
   } else {
     cols <- col
   }

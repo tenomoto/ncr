@@ -108,13 +108,15 @@ print.ncr <- function(x, ...) {
   }
   st <- nc_get()
   map_str <- if (is.list(st$map)) "<custom>" else paste(as.character(st$map), collapse = "+")
-  cat(sprintf("  State:      lon=%s, lat=%s, lev=%s, time=%s, proj=%s, map=%s\n",
+  col_str <- if (is.function(st$col)) "<fn>" else if (is.null(st$col)) "default" else paste(as.character(st$col), collapse = "+")
+  cat(sprintf("  State:      lon=%s, lat=%s, lev=%s, time=%s, proj=%s, map=%s, col=%s\n",
               .fmt_state_val(st$lon),
               .fmt_state_val(st$lat),
               .fmt_state_val(st$lev),
               .fmt_state_val(st$time),
               as.character(st$proj),
-              map_str))
+              map_str,
+              col_str))
   invisible(x)
 }
 
@@ -181,12 +183,12 @@ print.ncr_meta <- function(x, ...) {
 
   if (ax == "X" || sn %in% c("longitude", "grid_longitude") ||
       grepl("degree.*(east|_e|e$)", un) ||
-      nm %in% c("lon", "longitude", "lons", "x", "rlon", "nav_lon")) {
+      nm %in% c("lon", "longitude", "lons", "x", "i", "rlon", "nav_lon")) {
     return("lon")
   }
   if (ax == "Y" || sn %in% c("latitude", "grid_latitude") ||
       grepl("degree.*(north|_n|n$)", un) ||
-      nm %in% c("lat", "latitude", "lats", "y", "rlat", "nav_lat")) {
+      nm %in% c("lat", "latitude", "lats", "y", "j", "rlat", "nav_lat")) {
     return("lat")
   }
   if (ax == "T" || sn == "time" ||
@@ -198,7 +200,7 @@ print.ncr_meta <- function(x, ...) {
       sn %in% c("air_pressure", "altitude", "height", "depth", "atmosphere_ln_pressure_coordinate") ||
       grepl("^(hpa|pa|mb|millibar|mbar|dbar|m|km|level|layer|sigma|eta)$", un) ||
       nm %in% c("lev", "level", "levels", "plev", "pressure", "isobaric",
-                "z", "height", "depth", "alt", "altitude", "bottom_top")) {
+                "z", "k", "height", "depth", "alt", "altitude", "bottom_top")) {
     return("lev")
   }
   "other"

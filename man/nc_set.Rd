@@ -11,10 +11,15 @@ nc_set(
   lat = missing_arg(),
   lev = missing_arg(),
   time = missing_arg(),
+  i = missing_arg(),
+  j = missing_arg(),
+  k = missing_arg(),
+  t = missing_arg(),
   proj = missing_arg(),
   lon0 = missing_arg(),
   lat0 = missing_arg(),
-  map = missing_arg()
+  map = missing_arg(),
+  col = missing_arg()
 )
 
 nc_get()
@@ -37,6 +42,9 @@ index, or `NULL` for all levels. Defaults to `I(1L)` (first level).}
 range (e.g., `"2020-01-01"` or `c("2020-01-01", "2020-01-10")`), `POSIXt`
 / `Date`, or `NULL` for all time steps.}
 
+\item{i, j, k, t}{Optional 1-based integer index selectors for `lon` (`i`),
+`lat` (`j`), `lev` (`k`), and `time` (`t`).}
+
 \item{proj}{Character string naming the map projection (`"lonlat"`,
 `"mercator"`, `"robinson"`, `"mollweide"`, `"orthographic"`,
 `"stereographic"`, `"npstere"`, `"spstere"`, `"lambert"`).}
@@ -46,6 +54,9 @@ range (e.g., `"2020-01-01"` or `c("2020-01-01", "2020-01-10")`), `POSIXt`
 \item{map}{Default map overlay (`TRUE` for `"world"`, `FALSE` for none,
 `"hires"` / `"worldHires"` / `"japan"` via `mapdata`, or a custom
 `list(x, y)`).}
+
+\item{col}{Default colour palette name (e.g., `"RdYlBu"`, `"-RdYlBu"` to
+reverse), colour vector, or palette function.}
 }
 \value{
 A named list of the current global state settings (`nc_set` and

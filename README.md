@@ -54,13 +54,15 @@ contour(nc$temp, filled = TRUE)
 plot(nc, c("u", "v"), lev = 850, skip = 2)
 plot(nc, "temp", uv = c("u", "v"), lev = 850, skip = 2)
 
-# 5. Stateful GrADS-like slicing with nc_set() / nc_reset()
-nc_set(lon = c(100, 220), lat = c(0, 65), lev = 500, time = "2026-01-02 00:00:00")
+# 5. Stateful GrADS-like slicing with nc_set() / nc_reset() (including col and i, j, k, t)
+nc_set(lon = c(100, 220), lat = c(0, 65), lev = 500, time = "2026-01-02 00:00:00", col = "-RdYlBu")
 plot(nc$temp, uv = nc[c("u", "v")])
 nc_reset()
 
-# 6. Easy ad-hoc slicing syntax with `[`
+# 6. Easy ad-hoc slicing syntax (coordinate bounds or 1-based indices i, j, k, t) and lazy arithmetic
 plot(nc["temp", lon = c(110, 170), lat = c(15, 55), lev = 700, time = 4])
+plot(nc["temp", i = 1:18, j = 5:15, k = 3, t = 2], col = "-Viridis")
+plot(nc$temp - 273.15, lev = 850)
 
 # 7. Map projections ("orthographic", "robinson", "mollweide", "npstere", "lambert", ...)
 plot(nc, "temp", proj = "orthographic", lon0 = 140, lat0 = 30, uv = c("u", "v"), skip = 2)

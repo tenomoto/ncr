@@ -11,6 +11,10 @@ nc_vector(
   lat = missing_arg(),
   lev = missing_arg(),
   time = missing_arg(),
+  i = missing_arg(),
+  j = missing_arg(),
+  k = missing_arg(),
+  t = missing_arg(),
   length = 0.05,
   uvref = NA,
   skip = 1L,
@@ -36,6 +40,9 @@ when `x` is a vector `"ncr_slice"`.}
 
 \item{lon, lat, lev, time}{Optional dimension selectors passed to [nc_slice()]
 when `x` is an `"ncr"` object or used to re-slice `"ncr_slice"` inputs.}
+
+\item{i, j, k, t}{Optional 1-based integral index selectors for `lon` (`i`),
+`lat` (`j`), `lev` (`k`), and `time` (`t`).}
 
 \item{length}{Arrowhead length in inches passed to [drawvec()]
 (default `0.05`).}

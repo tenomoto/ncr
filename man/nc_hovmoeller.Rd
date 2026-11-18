@@ -12,6 +12,10 @@ nc_hovmoeller(
   lat = missing_arg(),
   lev = missing_arg(),
   time = NULL,
+  i = missing_arg(),
+  j = missing_arg(),
+  k = missing_arg(),
+  t = missing_arg(),
   time_axis = "y",
   filled = TRUE,
   contour = TRUE,
@@ -25,6 +29,10 @@ nc_xsection(
   lat = missing_arg(),
   lev = NULL,
   time = missing_arg(),
+  i = missing_arg(),
+  j = missing_arg(),
+  k = missing_arg(),
+  t = missing_arg(),
   zlog = TRUE,
   filled = TRUE,
   contour = TRUE,
@@ -39,6 +47,9 @@ length 1 for scalar, length 2 for vector `c("u", "v")`, or length 3 for
 scalar + vector `c("temp", "u", "v")`.}
 
 \item{lon, lat, lev, time}{Dimension selectors passed to [nc_slice()].}
+
+\item{i, j, k, t}{Optional 1-based integral index selectors for `lon` (`i`),
+`lat` (`j`), `lev` (`k`), and `time` (`t`).}
 
 \item{time_axis}{For Hovmoeller diagrams, which axis carries time: `"y"`
 (default) or `"x"`.}
